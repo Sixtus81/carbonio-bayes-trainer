@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "carbonio-bayes-trainer"
+version = "0.1.0"
+description = "Client-independent SpamAssassin Bayes training for Carbonio CE"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Sixtus81" }]
+dependencies = [
+  "PyYAML>=6.0.1,<7",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: Communications :: Email :: Filters",
+  "Topic :: System :: Systems Administration",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "ruff>=0.5,<1",
+  "mypy>=1.10,<2",
+  "types-PyYAML>=6.0,<7",
+]
+
+[project.scripts]
+carbonio-bayes-trainer = "carbonio_bayes_trainer.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/carbonio_bayes_trainer"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+packages = ["carbonio_bayes_trainer"]

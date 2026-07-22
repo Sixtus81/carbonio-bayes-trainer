@@ -1,0 +1,19 @@
+[Unit]
+Description=Carbonio Bayes Trainer scan
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=zextras
+Group=zextras
+ExecStart=/opt/carbonio-bayes-trainer/.venv/bin/carbonio-bayes-trainer --config /etc/carbonio-bayes-trainer.yaml scan
+WorkingDirectory=/opt/carbonio-bayes-trainer
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/carbonio-bayes-trainer
+
+[Install]
+WantedBy=multi-user.target
