@@ -8,7 +8,6 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import TypeVar
 
-from .backend import MailboxMessage
 from .carbonio_backend import CarbonioBackend
 from .config import AppConfig, load_config
 from .database import StateDatabase
