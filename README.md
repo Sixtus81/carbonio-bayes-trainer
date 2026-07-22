@@ -1,0 +1,86 @@
+# Carbonio Bayes Trainer
+
+Serverseitiges Spam-/Ham-Training für Carbonio CE, unabhängig davon, ob Nachrichten mit Outlook, Thunderbird, Apple Mail, iOS, macOS oder dem Carbonio-Webclient verschoben werden.
+
+## Hintergrund
+
+Carbonio erzeugt beim Markieren einer Nachricht als Spam im Webclient einen `SpamReport`. Eine reine IMAP-Verschiebung in den Systemordner `/Junk` löst diesen Vorgang nach bisherigen Tests nicht aus. Dadurch werden Nachrichten, die in externen Clients als Spam markiert werden, nicht von `zmtrainsa` bzw. SpamAssassin gelernt.
+
+Dieses Projekt beobachtet die serverseitigen Ordnerzustände aller konfigurierten Postfächer und trainiert Zustandsänderungen direkt mit `sa-learn`:
+
+- Nachricht erscheint in `/Junk` → als Spam lernen
+- Nachricht wurde zuvor als Spam gelernt und wird zurück nach `/Inbox` verschoben → als Ham lernen
+- Normale neue Inbox-Nachrichten werden **nicht automatisch** als Ham gelernt
+- Bereits verarbeitete Zustände werden in SQLite gespeichert
+
+> Status: frühe MVP-Version. Vor dem produktiven Einsatz zunächst mit `dry_run: true` testen.
+
+## Voraussetzungen
+
+- Carbonio CE auf einem Einzelserver oder einem Host mit Zugriff auf `zmmailbox`
+- Python 3.10 oder neuer
+- `sa-learn`
+- Ausführung als Benutzer `zextras` oder über einen passenden Wrapper
+
+## Installation
+
+```bash
+cd /opt
+git clone https://github.com/Sixtus81/carbonio-bayes-trainer.git
+cd carbonio-bayes-trainer
+python3 -m venv .venv
+.venv/bin/pip install .
+cp config.example.yaml /etc/carbonio-bayes-trainer.yaml
+```
+
+Konfiguration prüfen und zunächst im Testmodus starten:
+
+```bash
+.venv/bin/carbonio-bayes-trainer \
+  --config /etc/carbonio-bayes-trainer.yaml \
+  --once
+```
+
+## systemd
+
+```bash
+cp systemd/carbonio-bayes-trainer.service /etc/systemd/system/
+cp systemd/carbonio-bayes-trainer.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now carbonio-bayes-trainer.timer
+```
+
+Status und Protokoll:
+
+```bash
+systemctl status carbonio-bayes-trainer.timer
+journalctl -u carbonio-bayes-trainer.service -f
+```
+
+## Funktionsweise
+
+Der Trainer fragt je Postfach die Nachrichten in `/Inbox` und `/Junk` über `zmmailbox` ab. Für jede Nachricht wird der letzte bekannte Ordnerzustand gespeichert.
+
+| Vorheriger Zustand | Neuer Zustand | Aktion |
+|---|---|---|
+| unbekannt | Junk | Spam lernen |
+| Inbox | Junk | Spam lernen |
+| Junk / als Spam gelernt | Inbox | Ham lernen |
+| unbekannt | Inbox | keine Aktion |
+
+Die Originalnachricht wird nur temporär exportiert und anschließend an `sa-learn --spam` oder `sa-learn --ham` übergeben.
+
+## Sicherheit
+
+- Keine Passwörter werden benötigt, wenn `zmmailbox -z` als berechtigter Carbonio-Benutzer ausgeführt wird.
+- Temporäre Nachrichtendateien werden mit restriktiven Dateirechten erzeugt und nach dem Training gelöscht.
+- `dry_run` ist standardmäßig aktiviert.
+- Die SQLite-Datei sollte nur für den Dienstbenutzer lesbar sein.
+
+## Noch zu verifizieren
+
+Carbonio-/Zimbra-Versionen können sich in der Ausgabe und den REST-Pfaden von `zmmailbox` unterscheiden. Deshalb sind Such- und Exportargumente in der YAML-Datei konfigurierbar. Vor dem Aktivieren des echten Trainings bitte die Ausgabe auf dem Zielsystem prüfen.
+
+## Lizenz
+
+MIT
