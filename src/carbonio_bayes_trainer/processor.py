@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import tempfile
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from time import perf_counter
 from typing import Protocol
@@ -32,12 +33,17 @@ class MessageProcessor:
         trainer: TrainingBackend,
         inbox_folder: str,
         junk_folder: str,
+        export_workers: int = 5,
     ) -> None:
+        if not 1 <= export_workers <= 32:
+            raise ValueError("export_workers must be between 1 and 32")
+
         self.backend = backend
         self.database = database
         self.trainer = trainer
         self.inbox_folder = inbox_folder
         self.junk_folder = junk_folder
+        self.export_workers = export_workers
 
     def process(self, message: MailboxMessage) -> bool:
         return self.process_batch((message,))
@@ -101,6 +107,24 @@ class MessageProcessor:
 
         return all_successful
 
+    def _export_message(
+        self,
+        export: tuple[MailboxMessage, Path],
+    ) -> Path:
+        message, message_path = export
+        message_export_started = perf_counter()
+        self.backend.export_message(message, message_path)
+        message_export_seconds = perf_counter() - message_export_started
+
+        if message_export_seconds >= SLOW_EXPORT_SECONDS:
+            LOGGER.debug(
+                "Export of message %s took %.3f s",
+                message.message_key,
+                message_export_seconds,
+            )
+
+        return message_path
+
     def _train_batch(
         self,
         action: TrainingAction,
@@ -111,32 +135,25 @@ class MessageProcessor:
         with tempfile.TemporaryDirectory(
             prefix="carbonio-bayes-"
         ) as temp_dir:
-            paths: list[Path] = []
-            export_started = perf_counter()
-
-            for index, (message, _) in enumerate(items, start=1):
-                message_path = (
-                    Path(temp_dir)
-                    / f"{index:04d}-{message.message_key}.eml"
-                )
-                message_export_started = perf_counter()
-
-                self.backend.export_message(
+            exports = [
+                (
                     message,
-                    message_path,
+                    Path(temp_dir)
+                    / f"{index:04d}-{message.message_key}.eml",
                 )
+                for index, (message, _) in enumerate(items, start=1)
+            ]
+            export_started = perf_counter()
+            worker_count = min(self.export_workers, len(exports))
 
-                message_export_seconds = (
-                    perf_counter() - message_export_started
-                )
-                if message_export_seconds >= SLOW_EXPORT_SECONDS:
-                    LOGGER.debug(
-                        "Export of message %s took %.3f s",
-                        message.message_key,
-                        message_export_seconds,
-                    )
+            LOGGER.info(
+                "Exporting %d message(s) with %d worker(s)",
+                len(exports),
+                worker_count,
+            )
 
-                paths.append(message_path)
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                paths = list(executor.map(self._export_message, exports))
 
             export_seconds = perf_counter() - export_started
             LOGGER.info(

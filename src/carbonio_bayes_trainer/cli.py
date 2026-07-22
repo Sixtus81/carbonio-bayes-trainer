@@ -80,6 +80,7 @@ def run_doctor(config_path: str) -> int:
     print(f"[INFO] Dry-run: {config.dry_run}")
     print(f"[INFO] Database: {config.database_path}")
     print(f"[INFO] Training batch size: {config.batch_size}")
+    print(f"[INFO] Parallel export workers: {config.export_workers}")
     print(f"[INFO] Account exclusions: {len(config.exclude_accounts)} pattern(s)")
     return 1 if failed else 0
 
@@ -108,6 +109,7 @@ def run_init(config_path: str) -> int:
             trainer=trainer,
             inbox_folder=config.inbox_folder,
             junk_folder=config.junk_folder,
+            export_workers=config.export_workers,
         )
         for account in accounts:
             for folder in folders:
@@ -151,6 +153,7 @@ def run_scan(config_path: str) -> int:
             trainer=trainer,
             inbox_folder=config.inbox_folder,
             junk_folder=config.junk_folder,
+            export_workers=config.export_workers,
         )
         for account in accounts:
             for folder in folders:

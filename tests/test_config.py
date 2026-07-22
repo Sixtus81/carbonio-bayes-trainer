@@ -16,6 +16,8 @@ def test_load_config_defaults(tmp_path: Path) -> None:
     assert config.inbox_folder == "/Inbox"
     assert config.junk_folder == "/Junk"
     assert config.max_messages_per_folder == 1000
+    assert config.batch_size == 50
+    assert config.export_workers == 5
     assert r"^spam\." in config.exclude_accounts
     assert r"^ham\." in config.exclude_accounts
 
@@ -30,6 +32,18 @@ def test_loads_custom_account_exclusions(tmp_path: Path) -> None:
     config = load_config(config_file)
 
     assert config.exclude_accounts == ("^scanner@",)
+
+
+def test_loads_custom_export_workers(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "trainer:\n  export_workers: 8\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_file)
+
+    assert config.export_workers == 8
 
 
 def test_rejects_short_scan_interval(tmp_path: Path) -> None:
@@ -48,6 +62,17 @@ def test_rejects_limit_above_zmmailbox_maximum(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="between 1 and 1000"):
+        load_config(config_file)
+
+
+def test_rejects_invalid_export_workers(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "trainer:\n  export_workers: 33\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="export_workers must be between 1 and 32"):
         load_config(config_file)
 
 
