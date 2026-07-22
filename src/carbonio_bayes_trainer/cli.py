@@ -63,6 +63,13 @@ def _accounts(config: AppConfig, backend: CarbonioBackend) -> tuple[str, ...]:
     return _filter_accounts(tuple(discovered), config.exclude_accounts)
 
 
+def _build_trainer(config: AppConfig) -> SpamAssassinTrainer:
+    return SpamAssassinTrainer(
+        sa_learn_path=config.sa_learn_path,
+        max_message_size=config.max_message_size,
+    )
+
+
 def run_doctor(config_path: str) -> int:
     config = load_config(config_path)
     checks = [
@@ -81,6 +88,12 @@ def run_doctor(config_path: str) -> int:
     print(f"[INFO] Database: {config.database_path}")
     print(f"[INFO] Training batch size: {config.batch_size}")
     print(f"[INFO] Parallel export workers: {config.export_workers}")
+    size_description = (
+        "unlimited"
+        if config.max_message_size == 0
+        else f"{config.max_message_size} bytes"
+    )
+    print(f"[INFO] Maximum training message size: {size_description}")
     print(f"[INFO] Account exclusions: {len(config.exclude_accounts)} pattern(s)")
     return 1 if failed else 0
 
@@ -102,7 +115,7 @@ def run_init(config_path: str) -> int:
     observed = 0
 
     with StateDatabase(config.database_path) as database:
-        trainer = SpamAssassinTrainer(sa_learn_path=config.sa_learn_path)
+        trainer = _build_trainer(config)
         processor = MessageProcessor(
             backend=backend,
             database=database,
@@ -145,7 +158,7 @@ def run_scan(config_path: str) -> int:
         print(f"Dry-run complete: {len(accounts)} account(s), {scanned} message(s)")
         return 0
 
-    trainer = SpamAssassinTrainer(sa_learn_path=config.sa_learn_path)
+    trainer = _build_trainer(config)
     with StateDatabase(config.database_path) as database:
         processor = MessageProcessor(
             backend=backend,
