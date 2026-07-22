@@ -30,7 +30,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _filter_accounts(accounts: tuple[str, ...], exclude_patterns: tuple[str, ...]) -> tuple[str, ...]:
+def _filter_accounts(
+    accounts: tuple[str, ...],
+    exclude_patterns: tuple[str, ...],
+) -> tuple[str, ...]:
     patterns = tuple(re.compile(pattern) for pattern in exclude_patterns)
     return tuple(
         account
