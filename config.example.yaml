@@ -1,0 +1,19 @@
+# Keep dry-run enabled until doctor and scan output have been verified.
+dry_run: true
+scan_interval_seconds: 300
+database_path: /var/lib/carbonio-bayes-trainer/state.db
+
+carbonio:
+  zmmailbox_path: /opt/zextras/bin/zmmailbox
+  run_as_user: zextras
+  inbox_folder: /Inbox
+  junk_folder: /Junk
+  max_messages_per_folder: 5000
+
+  # Leave empty for future automatic account discovery.
+  # During the MVP phase, accounts will be configured explicitly.
+  accounts:
+    - user@example.com
+
+trainer:
+  sa_learn_path: /usr/bin/sa-learn
