@@ -14,7 +14,7 @@ class FakeBackend:
         pass
 
     def list_accounts(self) -> tuple[str, ...]:
-        return ("user@example.test",)
+        return ("user@example.test", "spam.internal@example.test")
 
     def list_messages(self, account: str, folder: str) -> tuple[MailboxMessage, ...]:
         return (MailboxMessage(account, "101", folder),)
@@ -33,9 +33,10 @@ def test_scan_dry_run_discovers_accounts_without_training(
         zmmailbox_path="/opt/zextras/bin/zmmailbox",
         mailbox_user="zextras",
         accounts=(),
+        exclude_accounts=(r"^spam\.",),
         inbox_folder="/Inbox",
         junk_folder="/Junk",
-        max_messages_per_folder=5000,
+        max_messages_per_folder=1000,
     )
 
     monkeypatch.setattr(cli, "load_config", lambda _: config)
@@ -44,4 +45,5 @@ def test_scan_dry_run_discovers_accounts_without_training(
     assert cli.run_scan("unused.yaml") == 0
     output = capsys.readouterr().out
     assert "1 account(s), 2 message(s)" in output
+    assert "spam.internal@example.test" not in output
     assert not config.database_path.exists()
