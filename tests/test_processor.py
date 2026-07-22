@@ -4,6 +4,7 @@ from carbonio_bayes_trainer.backend import MailboxMessage
 from carbonio_bayes_trainer.database import StateDatabase
 from carbonio_bayes_trainer.processor import MessageProcessor
 from carbonio_bayes_trainer.state_engine import TrainingAction
+from collections.abc import Sequence
 
 
 class FakeBackend:
