@@ -3,6 +3,7 @@ from pathlib import Path
 from carbonio_bayes_trainer.backend import MailboxMessage
 from carbonio_bayes_trainer.database import StateDatabase
 from carbonio_bayes_trainer.processor import MessageProcessor
+from carbonio_bayes_trainer.state_engine import TrainingAction
 
 
 class FakeBackend:
@@ -22,9 +23,13 @@ class FakeBackend:
 
 class FakeTrainer:
     def __init__(self) -> None:
-        self.actions: list[str] = []
+        self.actions: list[TrainingAction] = []
 
-    def train(self, message_path: Path, action: str) -> tuple[bool, str]:
+    def train(
+        self,
+        message_path: Path,
+        action: TrainingAction,
+    ) -> tuple[bool, str]:
         assert message_path.is_file()
         self.actions.append(action)
         return True, "learned"
@@ -39,7 +44,7 @@ def test_junk_message_is_trained_only_once(tmp_path: Path) -> None:
         processor = MessageProcessor(
             backend,
             database,
-            trainer,  # type: ignore[arg-type]
+            trainer,
             "/Inbox",
             "/Junk",
         )
@@ -58,7 +63,7 @@ def test_spam_returned_to_inbox_is_ham(tmp_path: Path) -> None:
         processor = MessageProcessor(
             backend,
             database,
-            trainer,  # type: ignore[arg-type]
+            trainer,
             "/Inbox",
             "/Junk",
         )
