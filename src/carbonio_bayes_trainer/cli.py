@@ -20,7 +20,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("doctor", help="Check local dependencies and configuration")
     subparsers.add_parser("stats", help="Show training statistics")
-    subparsers.add_parser("scan", help="Run one mailbox scan (backend follows in the next milestone)")
+    subparsers.add_parser(
+        "scan",
+        help="Run one mailbox scan (backend follows in the next milestone)",
+    )
     return parser
 
 
