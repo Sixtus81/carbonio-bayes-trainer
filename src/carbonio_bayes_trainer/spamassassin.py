@@ -31,12 +31,28 @@ class SpamAssassinTrainer:
         self.runner = runner
 
     def train(self, message_path: Path, action: TrainingAction) -> tuple[bool, str]:
+        return self.train_batch((message_path,), action)
+
+    def train_batch(
+        self,
+        message_paths: Sequence[Path],
+        action: TrainingAction,
+    ) -> tuple[bool, str]:
+        if not message_paths:
+            raise ValueError("message_paths must not be empty")
+
         mode = "--spam" if action == "spam" else "--ham"
-        result = self.runner([self.sa_learn_path, mode, "--showdots", str(message_path)])
+        command = [
+            self.sa_learn_path,
+            mode,
+            "--showdots",
+            *(str(path) for path in message_paths),
+        ]
+        result = self.runner(command)
         details = "\n".join(
             part.strip() for part in (result.stdout, result.stderr) if part.strip()
         )
-        success = result.returncode == 0 and "Learned tokens from 1 message" in details
+        success = result.returncode == 0
         if not details:
             details = f"sa-learn exited with status {result.returncode}"
         return success, details
