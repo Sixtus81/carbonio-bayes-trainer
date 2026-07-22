@@ -37,7 +37,8 @@ def load_config(path: str | Path) -> AppConfig:
     trainer = _require_mapping(root.get("trainer", {}), "trainer")
 
     accounts_raw = carbonio.get("accounts", [])
-    if not isinstance(accounts_raw, list) or not all(isinstance(item, str) for item in accounts_raw):
+    accounts_are_strings = all(isinstance(item, str) for item in accounts_raw)
+    if not isinstance(accounts_raw, list) or not accounts_are_strings:
         raise ValueError("carbonio.accounts must be a list of strings")
 
     interval = int(root.get("scan_interval_seconds", 300))
