@@ -38,8 +38,22 @@ Konfiguration prüfen und zunächst im Testmodus starten:
 ```bash
 .venv/bin/carbonio-bayes-trainer \
   --config /etc/carbonio-bayes-trainer.yaml \
-  --once
+  doctor
 ```
+
+## Konfiguration
+
+Der Abschnitt `trainer` steuert Batch-Größe, parallele Exporte und die maximale Nachrichtengröße für `sa-learn`:
+
+```yaml
+trainer:
+  sa_learn_path: /opt/zextras/common/bin/sa-learn
+  batch_size: 50
+  export_workers: 3
+  max_message_size: 10485760
+```
+
+`max_message_size` wird in Bytes angegeben. Der Standardwert beträgt 10 MiB. Der Wert `0` deaktiviert das Größenlimit. Damit werden auch Nachrichten verarbeitet, die über dem internen Standardlimit von `sa-learn` liegen.
 
 ## systemd
 
@@ -68,7 +82,7 @@ Der Trainer fragt je Postfach die Nachrichten in `/Inbox` und `/Junk` über `zmm
 | Junk / als Spam gelernt | Inbox | Ham lernen |
 | unbekannt | Inbox | keine Aktion |
 
-Die Originalnachricht wird nur temporär exportiert und anschließend an `sa-learn --spam` oder `sa-learn --ham` übergeben.
+Die Originalnachricht wird nur temporär exportiert und anschließend an `sa-learn --spam` oder `sa-learn --ham` übergeben. Dabei setzt der Trainer außerdem `--max-size` entsprechend der Konfiguration.
 
 ## Sicherheit
 

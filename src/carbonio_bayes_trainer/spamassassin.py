@@ -25,9 +25,13 @@ class SpamAssassinTrainer:
         self,
         *,
         sa_learn_path: str = "/opt/zextras/common/bin/sa-learn",
+        max_message_size: int = 10 * 1024 * 1024,
         runner: CommandRunner = _run,
     ) -> None:
+        if max_message_size < 0:
+            raise ValueError("max_message_size must be zero or greater")
         self.sa_learn_path = sa_learn_path
+        self.max_message_size = max_message_size
         self.runner = runner
 
     def train(self, message_path: Path, action: TrainingAction) -> tuple[bool, str]:
@@ -45,6 +49,8 @@ class SpamAssassinTrainer:
         command = [
             self.sa_learn_path,
             mode,
+            "--max-size",
+            str(self.max_message_size),
             "--showdots",
             *(str(path) for path in message_paths),
         ]
