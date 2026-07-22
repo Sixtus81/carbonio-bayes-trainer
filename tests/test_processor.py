@@ -24,15 +24,14 @@ class FakeBackend:
 
 class FakeTrainer:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, TrainingAction]] = []
+        self.actions: list[TrainingAction] = []
 
     def train_batch(
         self,
         message_paths: Sequence[Path],
         action: TrainingAction,
     ) -> tuple[bool, str]:
-        for path in message_paths:
-            self.calls.append((path.name, action))
+        self.actions.append(action)
         return True, ""
 
 
