@@ -18,6 +18,7 @@ def test_load_config_defaults(tmp_path: Path) -> None:
     assert config.max_messages_per_folder == 1000
     assert config.batch_size == 50
     assert config.export_workers == 5
+    assert config.max_message_size == 10 * 1024 * 1024
     assert r"^spam\." in config.exclude_accounts
     assert r"^ham\." in config.exclude_accounts
 
@@ -44,6 +45,18 @@ def test_loads_custom_export_workers(tmp_path: Path) -> None:
     config = load_config(config_file)
 
     assert config.export_workers == 8
+
+
+def test_loads_custom_max_message_size(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "trainer:\n  max_message_size: 0\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_file)
+
+    assert config.max_message_size == 0
 
 
 def test_rejects_short_scan_interval(tmp_path: Path) -> None:
@@ -73,6 +86,17 @@ def test_rejects_invalid_export_workers(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="export_workers must be between 1 and 32"):
+        load_config(config_file)
+
+
+def test_rejects_negative_max_message_size(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "trainer:\n  max_message_size: -1\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="max_message_size must be zero or greater"):
         load_config(config_file)
 
 
