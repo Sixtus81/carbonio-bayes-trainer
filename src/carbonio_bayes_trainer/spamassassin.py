@@ -31,7 +31,7 @@ class SpamAssassinTrainer:
         self.runner = runner
 
     def train(self, message_path: Path, action: TrainingAction) -> tuple[bool, str]:
-        mode = "--spam" if action == TrainingAction.SPAM else "--ham"
+        mode = "--spam" if action == "spam" else "--ham"
         result = self.runner([self.sa_learn_path, mode, "--showdots", str(message_path)])
         details = "\n".join(
             part.strip() for part in (result.stdout, result.stderr) if part.strip()
