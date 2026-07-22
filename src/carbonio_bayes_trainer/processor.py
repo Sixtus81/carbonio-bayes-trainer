@@ -4,6 +4,7 @@ import logging
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
+from time import perf_counter
 from typing import Protocol
 
 from .backend import MailboxBackend, MailboxMessage
@@ -11,6 +12,7 @@ from .database import StateDatabase
 from .state_engine import TrainingAction, decide_transition
 
 LOGGER = logging.getLogger(__name__)
+SLOW_EXPORT_SECONDS = 2.0
 
 
 class TrainingBackend(Protocol):
@@ -104,28 +106,60 @@ class MessageProcessor:
         action: TrainingAction,
         items: Sequence[tuple[MailboxMessage, str]],
     ) -> bool:
+        batch_started = perf_counter()
+
         with tempfile.TemporaryDirectory(
             prefix="carbonio-bayes-"
         ) as temp_dir:
             paths: list[Path] = []
+            export_started = perf_counter()
 
             for index, (message, _) in enumerate(items, start=1):
                 message_path = (
                     Path(temp_dir)
                     / f"{index:04d}-{message.message_key}.eml"
                 )
+                message_export_started = perf_counter()
 
                 self.backend.export_message(
                     message,
                     message_path,
                 )
 
+                message_export_seconds = (
+                    perf_counter() - message_export_started
+                )
+                if message_export_seconds >= SLOW_EXPORT_SECONDS:
+                    LOGGER.debug(
+                        "Export of message %s took %.3f s",
+                        message.message_key,
+                        message_export_seconds,
+                    )
+
                 paths.append(message_path)
 
+            export_seconds = perf_counter() - export_started
+            LOGGER.info(
+                "Exported %d message(s) for %s training in %.3f s",
+                len(paths),
+                action,
+                export_seconds,
+            )
+
+            training_started = perf_counter()
             success, details = self.trainer.train_batch(
                 paths,
                 action,
             )
+            training_seconds = perf_counter() - training_started
+            LOGGER.info(
+                "sa-learn processed %d %s message(s) in %.3f s",
+                len(paths),
+                action,
+                training_seconds,
+            )
+
+        database_started = perf_counter()
 
         for message, reason in items:
             self.database.record_event(
@@ -150,6 +184,16 @@ class MessageProcessor:
                     action,
                     reason,
                 )
+
+        database_seconds = perf_counter() - database_started
+        batch_seconds = perf_counter() - batch_started
+        LOGGER.info(
+            "Updated database for %d message(s) in %.3f s; "
+            "whole batch took %.3f s",
+            len(items),
+            database_seconds,
+            batch_seconds,
+        )
 
         if success:
             LOGGER.info(
