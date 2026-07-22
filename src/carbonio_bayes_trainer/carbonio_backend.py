@@ -9,7 +9,10 @@ from .backend import MailboxMessage
 
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
-_MESSAGE_ROW = re.compile(r"^\s*(\d+)\s+")
+# Carbonio 26.x prefixes search results with a row number, for example:
+# "1. 156438  mess ...". Older Zimbra/Carbonio versions may emit only the
+# message ID. Support both formats and capture the actual mailbox message ID.
+_MESSAGE_ROW = re.compile(r"^\s*(?:\d+\.\s+)?(\d+)\s+mess\b")
 
 
 def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -30,11 +33,11 @@ class CarbonioBackend:
         zmmailbox_path: str = "/opt/zextras/bin/zmmailbox",
         carbonio_path: str = "/opt/zextras/bin/carbonio",
         rest_url: str = "http://127.0.0.1:8080",
-        max_messages_per_folder: int = 5000,
+        max_messages_per_folder: int = 1000,
         runner: CommandRunner = _run,
     ) -> None:
-        if max_messages_per_folder < 1:
-            raise ValueError("max_messages_per_folder must be positive")
+        if not 1 <= max_messages_per_folder <= 1000:
+            raise ValueError("max_messages_per_folder must be between 1 and 1000")
         self.zmmailbox_path = zmmailbox_path
         self.carbonio_path = carbonio_path
         self.rest_url = rest_url.rstrip("/")
