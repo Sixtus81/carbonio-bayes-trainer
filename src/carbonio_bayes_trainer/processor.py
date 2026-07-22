@@ -4,6 +4,7 @@ import logging
 import tempfile
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Protocol
@@ -23,6 +24,18 @@ class TrainingBackend(Protocol):
         action: TrainingAction,
     ) -> tuple[bool, str]:
         """Train several RFC822 messages as one batch."""
+
+
+@dataclass(frozen=True)
+class BatchResult:
+    successful: int = 0
+    failed: int = 0
+
+    def __add__(self, other: BatchResult) -> BatchResult:
+        return BatchResult(
+            successful=self.successful + other.successful,
+            failed=self.failed + other.failed,
+        )
 
 
 class MessageProcessor:
@@ -46,7 +59,7 @@ class MessageProcessor:
         self.export_workers = export_workers
 
     def process(self, message: MailboxMessage) -> bool:
-        return self.process_batch((message,))
+        return self.process_batch((message,)).failed == 0
 
     def observe(self, message: MailboxMessage) -> None:
         previous = self.database.get(message.account, message.message_key)
@@ -59,11 +72,12 @@ class MessageProcessor:
             trained_as,
         )
 
-    def process_batch(self, messages: Sequence[MailboxMessage]) -> bool:
+    def process_batch(self, messages: Sequence[MailboxMessage]) -> BatchResult:
         pending: dict[TrainingAction, list[tuple[MailboxMessage, str]]] = {
             "spam": [],
             "ham": [],
         }
+        successful = 0
 
         for message in messages:
             previous = self.database.get(message.account, message.message_key)
@@ -90,22 +104,18 @@ class MessageProcessor:
                     message.message_key,
                     decision.reason,
                 )
+                successful += 1
                 continue
 
-            pending[decision.action].append(
-                (message, decision.reason)
-            )
+            pending[decision.action].append((message, decision.reason))
 
-        all_successful = True
+        result = BatchResult(successful=successful)
 
         for action, items in pending.items():
-            if not items:
-                continue
+            if items:
+                result += self._train_batch(action, items)
 
-            if not self._train_batch(action, items):
-                all_successful = False
-
-        return all_successful
+        return result
 
     def _export_message(
         self,
@@ -125,21 +135,95 @@ class MessageProcessor:
 
         return message_path
 
+    def _record_training(
+        self,
+        items: Sequence[tuple[MailboxMessage, str]],
+        action: TrainingAction,
+        success: bool,
+        details: str,
+    ) -> None:
+        for message, reason in items:
+            self.database.record_event(
+                message.account,
+                message.message_key,
+                action,
+                success,
+                details,
+            )
+
+            if success:
+                self.database.upsert(
+                    message.account,
+                    message.message_key,
+                    message.folder,
+                    action,
+                )
+                LOGGER.info(
+                    "Trained %s as %s: %s",
+                    message.message_key,
+                    action,
+                    reason,
+                )
+
+    def _train_exported(
+        self,
+        action: TrainingAction,
+        items: Sequence[tuple[MailboxMessage, str]],
+        paths: Sequence[Path],
+    ) -> BatchResult:
+        training_started = perf_counter()
+        success, details = self.trainer.train_batch(paths, action)
+        training_seconds = perf_counter() - training_started
+        LOGGER.info(
+            "sa-learn processed %d %s message(s) in %.3f s",
+            len(paths),
+            action,
+            training_seconds,
+        )
+
+        if success:
+            self._record_training(items, action, True, details)
+            LOGGER.info(
+                "Batch trained %d message(s) as %s",
+                len(items),
+                action,
+            )
+            return BatchResult(successful=len(items))
+
+        if len(items) == 1:
+            self._record_training(items, action, False, details)
+            LOGGER.error(
+                "Training failed for %s message %s: %s",
+                action,
+                items[0][0].message_key,
+                details,
+            )
+            return BatchResult(failed=1)
+
+        LOGGER.warning(
+            "Batch training failed for %d %s message(s); retrying individually: %s",
+            len(items),
+            action,
+            details,
+        )
+
+        result = BatchResult()
+        for item, path in zip(items, paths, strict=True):
+            result += self._train_exported(action, (item,), (path,))
+        return result
+
     def _train_batch(
         self,
         action: TrainingAction,
         items: Sequence[tuple[MailboxMessage, str]],
-    ) -> bool:
+    ) -> BatchResult:
         batch_started = perf_counter()
 
-        with tempfile.TemporaryDirectory(
-            prefix="carbonio-bayes-"
-        ) as temp_dir:
+        with tempfile.TemporaryDirectory(prefix="carbonio-bayes-") as temp_dir:
             exports = [
                 (
                     message,
-                    Path(temp_dir)
-                    / f"{index:04d}-{message.message_key}.eml",
+                    Path(temp_dir) / f"{index:04d}-{message.message_key}.eml",
                 )
                 for index, (message, _) in enumerate(items, start=1)
             ]
@@ -163,67 +247,15 @@ class MessageProcessor:
                 export_seconds,
             )
 
-            training_started = perf_counter()
-            success, details = self.trainer.train_batch(
-                paths,
-                action,
-            )
-            training_seconds = perf_counter() - training_started
-            LOGGER.info(
-                "sa-learn processed %d %s message(s) in %.3f s",
-                len(paths),
-                action,
-                training_seconds,
-            )
+            database_started = perf_counter()
+            result = self._train_exported(action, items, paths)
+            database_seconds = perf_counter() - database_started
 
-        database_started = perf_counter()
-
-        for message, reason in items:
-            self.database.record_event(
-                message.account,
-                message.message_key,
-                action,
-                success,
-                details,
-            )
-
-            if success:
-                self.database.upsert(
-                    message.account,
-                    message.message_key,
-                    message.folder,
-                    action,
-                )
-
-                LOGGER.info(
-                    "Trained %s as %s: %s",
-                    message.message_key,
-                    action,
-                    reason,
-                )
-
-        database_seconds = perf_counter() - database_started
         batch_seconds = perf_counter() - batch_started
         LOGGER.info(
-            "Updated database for %d message(s) in %.3f s; "
-            "whole batch took %.3f s",
+            "Updated database for %d message(s) in %.3f s; whole batch took %.3f s",
             len(items),
             database_seconds,
             batch_seconds,
         )
-
-        if success:
-            LOGGER.info(
-                "Batch trained %d message(s) as %s",
-                len(items),
-                action,
-            )
-        else:
-            LOGGER.error(
-                "Batch training failed for %d %s message(s): %s",
-                len(items),
-                action,
-                details,
-            )
-
-        return success
+        return result

@@ -171,10 +171,9 @@ def run_scan(config_path: str) -> int:
                         len(batch),
                     )
                     try:
-                        if processor.process_batch(batch):
-                            succeeded += len(batch)
-                        else:
-                            failed += len(batch)
+                        result = processor.process_batch(batch)
+                        succeeded += result.successful
+                        failed += result.failed
                     except Exception:
                         failed += len(batch)
                         keys = ", ".join(message.message_key for message in batch)
