@@ -14,8 +14,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 class TrainingBackend(Protocol):
-    def train(self, message_path: Path, action: TrainingAction) -> tuple[bool, str]:
-        """Train one RFC822 message as spam or ham."""
+    def train_batch(
+        self,
+        message_paths: Sequence[Path],
+        action: TrainingAction,
+    ) -> tuple[bool, str]:
+        """Train several RFC822 messages as one batch."""
 
 
 class MessageProcessor:
@@ -39,6 +43,7 @@ class MessageProcessor:
     def observe(self, message: MailboxMessage) -> None:
         previous = self.database.get(message.account, message.message_key)
         trained_as = previous.trained_as if previous else None
+
         self.database.upsert(
             message.account,
             message.message_key,
@@ -54,6 +59,7 @@ class MessageProcessor:
 
         for message in messages:
             previous = self.database.get(message.account, message.message_key)
+
             decision = decide_transition(
                 previous,
                 message.folder,
@@ -63,20 +69,32 @@ class MessageProcessor:
 
             if decision.action is None:
                 trained_as = previous.trained_as if previous else None
+
                 self.database.upsert(
                     message.account,
                     message.message_key,
                     message.folder,
                     trained_as,
                 )
-                LOGGER.debug("No training for %s: %s", message.message_key, decision.reason)
+
+                LOGGER.debug(
+                    "No training for %s: %s",
+                    message.message_key,
+                    decision.reason,
+                )
                 continue
 
-            pending[decision.action].append((message, decision.reason))
+            pending[decision.action].append(
+                (message, decision.reason)
+            )
 
         all_successful = True
+
         for action, items in pending.items():
-            if items and not self._train_batch(action, items):
+            if not items:
+                continue
+
+            if not self._train_batch(action, items):
                 all_successful = False
 
         return all_successful
@@ -86,20 +104,28 @@ class MessageProcessor:
         action: TrainingAction,
         items: Sequence[tuple[MailboxMessage, str]],
     ) -> bool:
-        with tempfile.TemporaryDirectory(prefix="carbonio-bayes-") as temp_dir:
+        with tempfile.TemporaryDirectory(
+            prefix="carbonio-bayes-"
+        ) as temp_dir:
             paths: list[Path] = []
+
             for index, (message, _) in enumerate(items, start=1):
-                message_path = Path(temp_dir) / f"{index:04d}-{message.message_key}.eml"
-                self.backend.export_message(message, message_path)
+                message_path = (
+                    Path(temp_dir)
+                    / f"{index:04d}-{message.message_key}.eml"
+                )
+
+                self.backend.export_message(
+                    message,
+                    message_path,
+                )
+
                 paths.append(message_path)
 
-            batch_method = getattr(self.trainer, "train_batch", None)
-            if batch_method is not None:
-                success, details = batch_method(paths, action)
-            else:
-                results = [self.trainer.train(path, action) for path in paths]
-                success = all(result[0] for result in results)
-                details = "\n".join(result[1] for result in results if result[1])
+            success, details = self.trainer.train_batch(
+                paths,
+                action,
+            )
 
         for message, reason in items:
             self.database.record_event(
@@ -109,6 +135,7 @@ class MessageProcessor:
                 success,
                 details,
             )
+
             if success:
                 self.database.upsert(
                     message.account,
@@ -116,6 +143,7 @@ class MessageProcessor:
                     message.folder,
                     action,
                 )
+
                 LOGGER.info(
                     "Trained %s as %s: %s",
                     message.message_key,
@@ -123,13 +151,18 @@ class MessageProcessor:
                     reason,
                 )
 
-        if not success:
+        if success:
+            LOGGER.info(
+                "Batch trained %d message(s) as %s",
+                len(items),
+                action,
+            )
+        else:
             LOGGER.error(
                 "Batch training failed for %d %s message(s): %s",
                 len(items),
                 action,
                 details,
             )
-        else:
-            LOGGER.info("Batch trained %d message(s) as %s", len(items), action)
+
         return success
