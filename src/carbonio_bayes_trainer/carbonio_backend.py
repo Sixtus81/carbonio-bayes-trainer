@@ -30,11 +30,15 @@ class CarbonioBackend:
         zmmailbox_path: str = "/opt/zextras/bin/zmmailbox",
         carbonio_path: str = "/opt/zextras/bin/carbonio",
         rest_url: str = "http://127.0.0.1:8080",
+        max_messages_per_folder: int = 5000,
         runner: CommandRunner = _run,
     ) -> None:
+        if max_messages_per_folder < 1:
+            raise ValueError("max_messages_per_folder must be positive")
         self.zmmailbox_path = zmmailbox_path
         self.carbonio_path = carbonio_path
         self.rest_url = rest_url.rstrip("/")
+        self.max_messages_per_folder = max_messages_per_folder
         self.runner = runner
 
     def list_accounts(self) -> Sequence[str]:
@@ -57,7 +61,7 @@ class CarbonioBackend:
                 "-t",
                 "message",
                 "-l",
-                "100000",
+                str(self.max_messages_per_folder),
                 f"in:{folder}",
             ]
         )
