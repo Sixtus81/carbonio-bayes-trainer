@@ -109,9 +109,9 @@ class MessageProcessor:
 
     def _export_message(
         self,
-        message: MailboxMessage,
-        message_path: Path,
+        export: tuple[MailboxMessage, Path],
     ) -> Path:
+        message, message_path = export
         message_export_started = perf_counter()
         self.backend.export_message(message, message_path)
         message_export_seconds = perf_counter() - message_export_started
@@ -153,12 +153,7 @@ class MessageProcessor:
             )
 
             with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                paths = list(
-                    executor.map(
-                        lambda item: self._export_message(*item),
-                        exports,
-                    )
-                )
+                paths = list(executor.map(self._export_message, exports))
 
             export_seconds = perf_counter() - export_started
             LOGGER.info(
