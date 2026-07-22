@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+_DEFAULT_EXCLUDE_ACCOUNTS = (
+    r"^spam\.",
+    r"^ham\.",
+    r"^virus-quarantine\.",
+    r"^galsync(?:\.|@)",
+)
 
 
 @dataclass(frozen=True)
@@ -16,6 +24,7 @@ class AppConfig:
     zmmailbox_path: str
     mailbox_user: str
     accounts: tuple[str, ...]
+    exclude_accounts: tuple[str, ...]
     inbox_folder: str
     junk_folder: str
     max_messages_per_folder: int
@@ -27,6 +36,12 @@ def _require_mapping(value: Any, name: str) -> dict[str, Any]:
     return value
 
 
+def _string_list(value: Any, name: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{name} must be a list of strings")
+    return tuple(value)
+
+
 def load_config(path: str | Path) -> AppConfig:
     config_path = Path(path)
     with config_path.open("r", encoding="utf-8") as handle:
@@ -36,18 +51,23 @@ def load_config(path: str | Path) -> AppConfig:
     carbonio = _require_mapping(root.get("carbonio", {}), "carbonio")
     trainer = _require_mapping(root.get("trainer", {}), "trainer")
 
-    accounts_raw = carbonio.get("accounts", [])
-    if not isinstance(accounts_raw, list) or not all(
-        isinstance(item, str) for item in accounts_raw
-    ):
-        raise ValueError("carbonio.accounts must be a list of strings")
+    accounts = _string_list(carbonio.get("accounts", []), "carbonio.accounts")
+    exclude_accounts = _string_list(
+        carbonio.get("exclude_accounts", list(_DEFAULT_EXCLUDE_ACCOUNTS)),
+        "carbonio.exclude_accounts",
+    )
+    for pattern in exclude_accounts:
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"Invalid carbonio.exclude_accounts regex {pattern!r}: {exc}") from exc
 
     interval = int(root.get("scan_interval_seconds", 300))
-    limit = int(carbonio.get("max_messages_per_folder", 5000))
+    limit = int(carbonio.get("max_messages_per_folder", 1000))
     if interval < 30:
         raise ValueError("scan_interval_seconds must be at least 30")
-    if limit < 1:
-        raise ValueError("max_messages_per_folder must be positive")
+    if not 1 <= limit <= 1000:
+        raise ValueError("max_messages_per_folder must be between 1 and 1000")
 
     return AppConfig(
         database_path=Path(root.get("database_path", "/var/lib/carbonio-bayes-trainer/state.db")),
@@ -58,7 +78,8 @@ def load_config(path: str | Path) -> AppConfig:
         ),
         zmmailbox_path=str(carbonio.get("zmmailbox_path", "/opt/zextras/bin/zmmailbox")),
         mailbox_user=str(carbonio.get("run_as_user", "zextras")),
-        accounts=tuple(accounts_raw),
+        accounts=accounts,
+        exclude_accounts=exclude_accounts,
         inbox_folder=str(carbonio.get("inbox_folder", "/Inbox")),
         junk_folder=str(carbonio.get("junk_folder", "/Junk")),
         max_messages_per_folder=limit,

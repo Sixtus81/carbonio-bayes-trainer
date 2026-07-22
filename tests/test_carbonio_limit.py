@@ -13,7 +13,7 @@ def test_message_limit_is_forwarded_to_zmmailbox() -> None:
         observed.extend(command)
         return subprocess.CompletedProcess(list(command), 0, "", "")
 
-    backend = CarbonioBackend(max_messages_per_folder=1234, runner=runner)
+    backend = CarbonioBackend(max_messages_per_folder=999, runner=runner)
     backend.list_messages("user@example.test", "/Junk")
 
-    assert "1234" in observed
+    assert "999" in observed
