@@ -53,7 +53,9 @@ def load_config(path: str | Path) -> AppConfig:
         database_path=Path(root.get("database_path", "/var/lib/carbonio-bayes-trainer/state.db")),
         dry_run=bool(root.get("dry_run", True)),
         scan_interval_seconds=interval,
-        sa_learn_path=str(trainer.get("sa_learn_path", "/usr/bin/sa-learn")),
+        sa_learn_path=str(
+            trainer.get("sa_learn_path", "/opt/zextras/common/bin/sa-learn")
+        ),
         zmmailbox_path=str(carbonio.get("zmmailbox_path", "/opt/zextras/bin/zmmailbox")),
         mailbox_user=str(carbonio.get("run_as_user", "zextras")),
         accounts=tuple(accounts_raw),
