@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import shutil
 from pathlib import Path
 
@@ -29,6 +30,15 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _filter_accounts(accounts: tuple[str, ...], exclude_patterns: tuple[str, ...]) -> tuple[str, ...]:
+    patterns = tuple(re.compile(pattern) for pattern in exclude_patterns)
+    return tuple(
+        account
+        for account in accounts
+        if not any(pattern.search(account) for pattern in patterns)
+    )
+
+
 def run_doctor(config_path: str) -> int:
     config = load_config(config_path)
     checks = [
@@ -45,6 +55,7 @@ def run_doctor(config_path: str) -> int:
         failed = failed or not success
     print(f"[INFO] Dry-run: {config.dry_run}")
     print(f"[INFO] Database: {config.database_path}")
+    print(f"[INFO] Account exclusions: {len(config.exclude_accounts)} pattern(s)")
     return 1 if failed else 0
 
 
@@ -63,7 +74,8 @@ def run_scan(config_path: str) -> int:
         zmmailbox_path=config.zmmailbox_path,
         max_messages_per_folder=config.max_messages_per_folder,
     )
-    accounts = config.accounts or tuple(backend.list_accounts())
+    discovered = config.accounts or tuple(backend.list_accounts())
+    accounts = _filter_accounts(tuple(discovered), config.exclude_accounts)
     folders = (config.inbox_folder, config.junk_folder)
 
     scanned = 0
