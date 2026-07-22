@@ -20,3 +20,7 @@ trainer:
 
   # Number of RFC822 exports started in parallel. Start conservatively.
   export_workers: 5
+
+  # Maximum RFC822 message size accepted by sa-learn, in bytes.
+  # 10485760 = 10 MiB. Set to 0 for unlimited.
+  max_message_size: 10485760
