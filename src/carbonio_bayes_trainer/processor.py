@@ -17,13 +17,6 @@ class TrainingBackend(Protocol):
     def train(self, message_path: Path, action: TrainingAction) -> tuple[bool, str]:
         """Train one RFC822 message as spam or ham."""
 
-    def train_batch(
-        self,
-        message_paths: Sequence[Path],
-        action: TrainingAction,
-    ) -> tuple[bool, str]:
-        """Train several RFC822 messages as one sa-learn batch."""
-
 
 class MessageProcessor:
     def __init__(
@@ -83,9 +76,7 @@ class MessageProcessor:
 
         all_successful = True
         for action, items in pending.items():
-            if not items:
-                continue
-            if not self._train_batch(action, items):
+            if items and not self._train_batch(action, items):
                 all_successful = False
 
         return all_successful
@@ -102,7 +93,13 @@ class MessageProcessor:
                 self.backend.export_message(message, message_path)
                 paths.append(message_path)
 
-            success, details = self.trainer.train_batch(paths, action)
+            batch_method = getattr(self.trainer, "train_batch", None)
+            if batch_method is not None:
+                success, details = batch_method(paths, action)
+            else:
+                results = [self.trainer.train(path, action) for path in paths]
+                success = all(result[0] for result in results)
+                details = "\n".join(result[1] for result in results if result[1])
 
         for message, reason in items:
             self.database.record_event(
