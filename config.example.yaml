@@ -10,10 +10,9 @@ carbonio:
   junk_folder: /Junk
   max_messages_per_folder: 5000
 
-  # Leave empty for future automatic account discovery.
-  # During the MVP phase, accounts will be configured explicitly.
-  accounts:
-    - user@example.com
+  # Leave empty to discover all Carbonio accounts automatically.
+  # Add addresses here to restrict scanning to selected mailboxes.
+  accounts: []
 
 trainer:
-  sa_learn_path: /usr/bin/sa-learn
+  sa_learn_path: /opt/zextras/common/bin/sa-learn
