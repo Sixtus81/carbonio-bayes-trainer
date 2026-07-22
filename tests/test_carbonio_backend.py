@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -10,13 +11,13 @@ from carbonio_bayes_trainer.carbonio_backend import CarbonioBackend
 
 
 def completed(
-    command: list[str], *, stdout: str = "", stderr: str = "", returncode: int = 0
+    command: Sequence[str], *, stdout: str = "", stderr: str = "", returncode: int = 0
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(command, returncode, stdout, stderr)
+    return subprocess.CompletedProcess(list(command), returncode, stdout, stderr)
 
 
 def test_list_accounts_filters_non_account_output() -> None:
-    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+    def runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
         return completed(command, stdout="user@example.test\nINFO startup\nadmin@example.test\n")
 
     backend = CarbonioBackend(runner=runner)
@@ -25,7 +26,7 @@ def test_list_accounts_filters_non_account_output() -> None:
 
 
 def test_list_messages_parses_numeric_message_ids() -> None:
-    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+    def runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
         return completed(
             command,
             stdout=(
@@ -46,9 +47,10 @@ def test_list_messages_parses_numeric_message_ids() -> None:
 def test_export_message_uses_local_rest_url_and_validates_mail(tmp_path: Path) -> None:
     observed: list[str] = []
 
-    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+    def runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
         observed.extend(command)
-        output_path = Path(command[command.index("-o") + 1])
+        command_list = list(command)
+        output_path = Path(command_list[command_list.index("-o") + 1])
         output_path.write_bytes(
             b"Received: by mail.example.test\r\n"
             b"Message-ID: <test@example.test>\r\n"
@@ -68,8 +70,9 @@ def test_export_message_uses_local_rest_url_and_validates_mail(tmp_path: Path) -
 
 
 def test_export_message_rejects_empty_file(tmp_path: Path) -> None:
-    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
-        Path(command[command.index("-o") + 1]).touch()
+    def runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        command_list = list(command)
+        Path(command_list[command_list.index("-o") + 1]).touch()
         return completed(command)
 
     backend = CarbonioBackend(runner=runner)
