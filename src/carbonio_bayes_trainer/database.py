@@ -94,7 +94,10 @@ class StateDatabase:
 
     def stats(self) -> dict[str, int]:
         rows = self.connection.execute(
-            "SELECT action, COUNT(*) AS count FROM training_events WHERE success = 1 GROUP BY action"
+            "SELECT action, COUNT(*) AS count "
+            "FROM training_events "
+            "WHERE success = 1 "
+            "GROUP BY action"
         ).fetchall()
         result = {"spam": 0, "ham": 0}
         result.update({str(row["action"]): int(row["count"]) for row in rows})
