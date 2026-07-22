@@ -13,7 +13,7 @@ Dieses Projekt beobachtet die serverseitigen Ordnerzustände aller konfigurierte
 - Normale neue Inbox-Nachrichten werden **nicht automatisch** als Ham gelernt
 - Bereits verarbeitete Zustände werden in SQLite gespeichert
 
-> Status: frühe MVP-Version. Vor dem produktiven Einsatz zunächst mit `dry_run: true` testen.
+> Vor dem ersten produktiven Einsatz zunächst mit `dry_run: true` testen.
 
 ## Voraussetzungen
 
@@ -64,6 +64,8 @@ systemctl daemon-reload
 systemctl enable --now carbonio-bayes-trainer.timer
 ```
 
+Der Dienst erlaubt Schreibzugriffe auf die eigene SQLite-Datenbank und auf die SpamAssassin-Bayes-Datenbank unter `/opt/zextras/.spamassassin`. Diese Freigabe wird für `bayes.mutex`, `bayes_seen` und `bayes_toks` benötigt.
+
 Status und Protokoll:
 
 ```bash
@@ -84,12 +86,25 @@ Der Trainer fragt je Postfach die Nachrichten in `/Inbox` und `/Junk` über `zmm
 
 Die Originalnachricht wird nur temporär exportiert und anschließend an `sa-learn --spam` oder `sa-learn --ham` übergeben. Dabei setzt der Trainer außerdem `--max-size` entsprechend der Konfiguration.
 
+## Produktiv validiert
+
+Version 0.2.0 wurde auf einer produktiven Carbonio-CE-Installation mit folgender Konfiguration getestet:
+
+- 30 Mailkonten
+- 6936 geprüfte Nachrichten
+- 6936 erfolgreich verarbeitet
+- 0 Fehler
+- `batch_size: 50`
+- `export_workers: 3`
+- `max_message_size: 10485760`
+
 ## Sicherheit
 
 - Keine Passwörter werden benötigt, wenn `zmmailbox -z` als berechtigter Carbonio-Benutzer ausgeführt wird.
 - Temporäre Nachrichtendateien werden mit restriktiven Dateirechten erzeugt und nach dem Training gelöscht.
 - `dry_run` ist standardmäßig aktiviert.
 - Die SQLite-Datei sollte nur für den Dienstbenutzer lesbar sein.
+- Der systemd-Dienst läuft als `zextras` mit `NoNewPrivileges=true`, `ProtectHome=true` und `ProtectSystem=full`.
 
 ## Noch zu verifizieren
 
