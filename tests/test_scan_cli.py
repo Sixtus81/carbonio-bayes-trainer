@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from carbonio_bayes_trainer import cli
 from carbonio_bayes_trainer.backend import MailboxMessage
 from carbonio_bayes_trainer.config import AppConfig
@@ -19,9 +21,9 @@ class FakeBackend:
 
 
 def test_scan_dry_run_discovers_accounts_without_training(
-    monkeypatch: object,
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    capsys: object,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     config = AppConfig(
         database_path=tmp_path / "state.db",
