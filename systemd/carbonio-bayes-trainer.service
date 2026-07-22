@@ -11,9 +11,10 @@ ExecStart=/opt/carbonio-bayes-trainer/.venv/bin/carbonio-bayes-trainer --config 
 WorkingDirectory=/opt/carbonio-bayes-trainer
 PrivateTmp=true
 NoNewPrivileges=true
-ProtectSystem=strict
+ProtectSystem=full
 ProtectHome=true
 ReadWritePaths=/var/lib/carbonio-bayes-trainer
+ReadWritePaths=/opt/zextras/.spamassassin
 
 [Install]
 WantedBy=multi-user.target
