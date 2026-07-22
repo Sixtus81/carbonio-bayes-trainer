@@ -23,16 +23,16 @@ class FakeBackend:
 
 class FakeTrainer:
     def __init__(self) -> None:
-        self.actions: list[TrainingAction] = []
+        self.calls: list[tuple[str, TrainingAction]] = []
 
-    def train(
+    def train_batch(
         self,
-        message_path: Path,
+        message_paths: Sequence[Path],
         action: TrainingAction,
     ) -> tuple[bool, str]:
-        assert message_path.is_file()
-        self.actions.append(action)
-        return True, "learned"
+        for path in message_paths:
+            self.calls.append((path.name, action))
+        return True, ""
 
 
 def test_junk_message_is_trained_only_once(tmp_path: Path) -> None:
