@@ -3,13 +3,18 @@ from __future__ import annotations
 import logging
 import tempfile
 from pathlib import Path
+from typing import Protocol
 
 from .backend import MailboxBackend, MailboxMessage
 from .database import StateDatabase
-from .state_engine import decide_transition
-from .trainer import BayesTrainer
+from .state_engine import TrainingAction, decide_transition
 
 LOGGER = logging.getLogger(__name__)
+
+
+class TrainingBackend(Protocol):
+    def train(self, message_path: Path, action: TrainingAction) -> tuple[bool, str]:
+        """Train one RFC822 message as spam or ham."""
 
 
 class MessageProcessor:
@@ -17,7 +22,7 @@ class MessageProcessor:
         self,
         backend: MailboxBackend,
         database: StateDatabase,
-        trainer: BayesTrainer,
+        trainer: TrainingBackend,
         inbox_folder: str,
         junk_folder: str,
     ) -> None:
