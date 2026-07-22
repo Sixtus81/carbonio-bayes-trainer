@@ -26,18 +26,19 @@ def test_scan_dry_run_discovers_accounts_without_training(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     config = AppConfig(
-        database_path=tmp_path / "state.db",
-        dry_run=True,
-        scan_interval_seconds=300,
-        sa_learn_path="/opt/zextras/common/bin/sa-learn",
-        zmmailbox_path="/opt/zextras/bin/zmmailbox",
-        mailbox_user="zextras",
-        accounts=(),
-        exclude_accounts=(r"^spam\.",),
-        inbox_folder="/Inbox",
-        junk_folder="/Junk",
-        max_messages_per_folder=1000,
-    )
+    database_path=tmp_path / "state.db",
+    dry_run=True,
+    scan_interval_seconds=300,
+    sa_learn_path="/opt/zextras/common/bin/sa-learn",
+    zmmailbox_path="/opt/zextras/bin/zmmailbox",
+    mailbox_user="zextras",
+    accounts=(),
+    exclude_accounts=(r"^spam\.",),
+    inbox_folder="/Inbox",
+    junk_folder="/Junk",
+    max_messages_per_folder=1000,
+    batch_size=50,
+)
 
     monkeypatch.setattr(cli, "load_config", lambda _: config)
     monkeypatch.setattr(cli, "CarbonioBackend", FakeBackend)
