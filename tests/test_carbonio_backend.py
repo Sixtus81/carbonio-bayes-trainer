@@ -44,6 +44,32 @@ def test_list_messages_parses_numeric_message_ids() -> None:
     )
 
 
+def test_list_messages_parses_carbonio_26_numbered_rows() -> None:
+    def runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        return completed(
+            command,
+            stdout=(
+                "num: 2, more: true\n\n"
+                "       Id  Type   From                  Subject\n"
+                "   ------  ----   --------------------  -------\n"
+                "1. 156438  mess   Slimming              Subject one\n"
+                "2. 156437  mess   Window                Subject two\n"
+            ),
+        )
+
+    backend = CarbonioBackend(runner=runner)
+
+    assert backend.list_messages("user@example.test", "/Inbox") == (
+        MailboxMessage("user@example.test", "156438", "/Inbox"),
+        MailboxMessage("user@example.test", "156437", "/Inbox"),
+    )
+
+
+def test_rejects_zmmailbox_limit_above_1000() -> None:
+    with pytest.raises(ValueError, match="between 1 and 1000"):
+        CarbonioBackend(max_messages_per_folder=1001)
+
+
 def test_export_message_uses_local_rest_url_and_validates_mail(tmp_path: Path) -> None:
     observed: list[str] = []
 
