@@ -29,6 +29,7 @@ class AppConfig:
     junk_folder: str
     max_messages_per_folder: int
     batch_size: int
+    export_workers: int = 5
 
 
 def _require_mapping(value: Any, name: str) -> dict[str, Any]:
@@ -66,12 +67,15 @@ def load_config(path: str | Path) -> AppConfig:
     interval = int(root.get("scan_interval_seconds", 300))
     limit = int(carbonio.get("max_messages_per_folder", 1000))
     batch_size = int(trainer.get("batch_size", 50))
+    export_workers = int(trainer.get("export_workers", 5))
     if interval < 30:
         raise ValueError("scan_interval_seconds must be at least 30")
     if not 1 <= limit <= 1000:
         raise ValueError("max_messages_per_folder must be between 1 and 1000")
     if not 1 <= batch_size <= 1000:
         raise ValueError("trainer.batch_size must be between 1 and 1000")
+    if not 1 <= export_workers <= 32:
+        raise ValueError("trainer.export_workers must be between 1 and 32")
 
     return AppConfig(
         database_path=Path(root.get("database_path", "/var/lib/carbonio-bayes-trainer/state.db")),
@@ -88,4 +92,5 @@ def load_config(path: str | Path) -> AppConfig:
         junk_folder=str(carbonio.get("junk_folder", "/Junk")),
         max_messages_per_folder=limit,
         batch_size=batch_size,
+        export_workers=export_workers,
     )
