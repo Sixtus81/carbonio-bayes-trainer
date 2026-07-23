@@ -10,11 +10,12 @@ from time import perf_counter
 from typing import Protocol
 
 from .backend import MailboxBackend, MailboxMessage
-from .database import StateDatabase
+from .database import MessageState, StateDatabase
 from .state_engine import TrainingAction, decide_transition
 
 LOGGER = logging.getLogger(__name__)
 SLOW_EXPORT_SECONDS = 2.0
+PendingItem = tuple[MailboxMessage, str, str | None]
 
 
 class TrainingBackend(Protocol):
@@ -61,8 +62,25 @@ class MessageProcessor:
     def process(self, message: MailboxMessage) -> bool:
         return self.process_batch((message,)).failed == 0
 
+    def _resolve_previous(
+        self, message: MailboxMessage, previous: MessageState | None
+    ) -> tuple[MessageState | None, str | None]:
+        stable_key = previous.stable_key if previous else None
+        needs_identity = previous is None or (
+            previous.stable_key is None and previous.trained_as == "spam"
+        )
+        if not needs_identity:
+            return previous, stable_key
+
+        stable_key = self.backend.stable_message_key(message)
+        stable_previous = self.database.get_by_stable_key(message.account, stable_key)
+        if stable_previous is not None:
+            previous = stable_previous
+        return previous, stable_key
+
     def observe(self, message: MailboxMessage) -> None:
         previous = self.database.get(message.account, message.message_key)
+        previous, stable_key = self._resolve_previous(message, previous)
         trained_as = previous.trained_as if previous else None
 
         self.database.upsert(
@@ -70,10 +88,11 @@ class MessageProcessor:
             message.message_key,
             message.folder,
             trained_as,
+            stable_key,
         )
 
     def process_batch(self, messages: Sequence[MailboxMessage]) -> BatchResult:
-        pending: dict[TrainingAction, list[tuple[MailboxMessage, str]]] = {
+        pending: dict[TrainingAction, list[PendingItem]] = {
             "spam": [],
             "ham": [],
         }
@@ -81,6 +100,7 @@ class MessageProcessor:
 
         for message in messages:
             previous = self.database.get(message.account, message.message_key)
+            previous, stable_key = self._resolve_previous(message, previous)
 
             decision = decide_transition(
                 previous,
@@ -97,6 +117,7 @@ class MessageProcessor:
                     message.message_key,
                     message.folder,
                     trained_as,
+                    stable_key,
                 )
 
                 LOGGER.debug(
@@ -107,7 +128,7 @@ class MessageProcessor:
                 successful += 1
                 continue
 
-            pending[decision.action].append((message, decision.reason))
+            pending[decision.action].append((message, decision.reason, stable_key))
 
         result = BatchResult(successful=successful)
 
@@ -137,12 +158,12 @@ class MessageProcessor:
 
     def _record_training(
         self,
-        items: Sequence[tuple[MailboxMessage, str]],
+        items: Sequence[PendingItem],
         action: TrainingAction,
         success: bool,
         details: str,
     ) -> None:
-        for message, reason in items:
+        for message, reason, stable_key in items:
             self.database.record_event(
                 message.account,
                 message.message_key,
@@ -157,6 +178,7 @@ class MessageProcessor:
                     message.message_key,
                     message.folder,
                     action,
+                    stable_key,
                 )
                 LOGGER.info(
                     "Trained %s as %s: %s",
@@ -168,7 +190,7 @@ class MessageProcessor:
     def _train_exported(
         self,
         action: TrainingAction,
-        items: Sequence[tuple[MailboxMessage, str]],
+        items: Sequence[PendingItem],
         paths: Sequence[Path],
     ) -> BatchResult:
         training_started = perf_counter()
@@ -215,7 +237,7 @@ class MessageProcessor:
     def _train_batch(
         self,
         action: TrainingAction,
-        items: Sequence[tuple[MailboxMessage, str]],
+        items: Sequence[PendingItem],
     ) -> BatchResult:
         batch_started = perf_counter()
 
@@ -225,7 +247,7 @@ class MessageProcessor:
                     message,
                     Path(temp_dir) / f"{index:04d}-{message.message_key}.eml",
                 )
-                for index, (message, _) in enumerate(items, start=1)
+                for index, (message, _, _) in enumerate(items, start=1)
             ]
             export_started = perf_counter()
             worker_count = min(self.export_workers, len(exports))
