@@ -43,6 +43,19 @@ Konfiguration prüfen und zunächst im Testmodus starten:
 
 ## Konfiguration
 
+Der Abschnitt `carbonio` steuert unter anderem das parallele Einlesen der Mailbox-Ordner:
+
+```yaml
+carbonio:
+  zmmailbox_path: /opt/zextras/bin/zmmailbox
+  inbox_folder: /Inbox
+  junk_folder: /Junk
+  max_messages_per_folder: 1000
+  list_workers: 5
+```
+
+`list_workers` legt fest, wie viele Inbox-/Junk-Abfragen gleichzeitig gestartet werden. Der Standardwert ist `5`. Höhere Werte können den Scan weiter beschleunigen, belasten Carbonio aber stärker.
+
 Der Abschnitt `trainer` steuert Batch-Größe, parallele Exporte und die maximale Nachrichtengröße für `sa-learn`:
 
 ```yaml
@@ -75,7 +88,7 @@ journalctl -u carbonio-bayes-trainer.service -f
 
 ## Funktionsweise
 
-Der Trainer fragt je Postfach die Nachrichten in `/Inbox` und `/Junk` über `zmmailbox` ab. Für jede Nachricht wird der letzte bekannte Ordnerzustand gespeichert.
+Der Trainer fragt je Postfach die Nachrichten in `/Inbox` und `/Junk` über `zmmailbox` ab. Diese Ordnerabfragen werden parallel ausgeführt; die weitere Verarbeitung und die SQLite-Zugriffe bleiben deterministisch und sequenziell. Für jede Nachricht wird der letzte bekannte Ordnerzustand gespeichert.
 
 | Vorheriger Zustand | Neuer Zustand | Aktion |
 |---|---|---|
@@ -84,19 +97,26 @@ Der Trainer fragt je Postfach die Nachrichten in `/Inbox` und `/Junk` über `zmm
 | Junk / als Spam gelernt | Inbox | Ham lernen |
 | unbekannt | Inbox | keine Aktion |
 
+Carbonio kann beim Verschieben einer Nachricht die interne Mailbox-ID ändern. Deshalb verwendet der Trainer zusätzlich eine stabile Nachrichtenidentität auf Basis der RFC822-`Message-ID`; fehlt diese, wird ein SHA256-Wert der vollständigen Nachricht verwendet.
+
 Die Originalnachricht wird nur temporär exportiert und anschließend an `sa-learn --spam` oder `sa-learn --ham` übergeben. Dabei setzt der Trainer außerdem `--max-size` entsprechend der Konfiguration.
 
 ## Produktiv validiert
 
-Version 0.2.0 wurde auf einer produktiven Carbonio-CE-Installation mit folgender Konfiguration getestet:
+Version 0.2.2 wurde auf einer produktiven Carbonio-CE-Installation mit folgender Konfiguration getestet:
 
 - 30 Mailkonten
-- 6936 geprüfte Nachrichten
-- 6936 erfolgreich verarbeitet
+- 7090 geprüfte Nachrichten
+- 7090 erfolgreich verarbeitet
 - 0 Fehler
+- `list_workers: 5`
 - `batch_size: 50`
 - `export_workers: 3`
 - `max_message_size: 10485760`
+- Laufzeit vor parallelem Listing: ca. 3 min 57 s
+- Laufzeit mit Version 0.2.2: ca. 1 min 26 s
+
+Das entspricht in dieser Umgebung einer Verkürzung der realen Scanzeit um rund 64 %.
 
 ## Sicherheit
 
