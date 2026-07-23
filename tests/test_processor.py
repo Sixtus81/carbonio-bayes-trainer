@@ -19,8 +19,13 @@ class FakeBackend:
 
     def export_message(self, message: MailboxMessage, destination: Path) -> None:
         self.exports += 1
-        destination.write_text("Message-ID: <stable@example.com>\nSubject: test\n\nbody\n", encoding="utf-8")
-
+    destination.write_text(
+        "Message-ID: <stable@example.com>\n"
+        "Subject: test\n"
+        "\n"
+        "body\n",
+        encoding="utf-8",
+    )
     def stable_message_key(self, message: MailboxMessage) -> str:
         return "message-id:<stable@example.com>"
 
