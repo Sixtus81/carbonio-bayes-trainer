@@ -5,9 +5,11 @@ import logging
 import re
 import shutil
 from collections.abc import Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TypeVar
 
+from .backend import MailboxMessage
 from .carbonio_backend import CarbonioBackend
 from .config import AppConfig, load_config
 from .database import StateDatabase
@@ -16,6 +18,7 @@ from .spamassassin import SpamAssassinTrainer
 
 LOGGER = logging.getLogger(__name__)
 T = TypeVar("T")
+MailboxListing = tuple[str, str, Sequence[MailboxMessage]]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +52,34 @@ def _filter_accounts(
 def _chunks(items: Sequence[T], size: int) -> Iterator[Sequence[T]]:
     for start in range(0, len(items), size):
         yield items[start : start + size]
+
+
+def _list_mailbox(
+    backend: CarbonioBackend,
+    job: tuple[str, str],
+) -> MailboxListing:
+    account, folder = job
+    return account, folder, backend.list_messages(account, folder)
+
+
+def _list_mailboxes(
+    backend: CarbonioBackend,
+    accounts: Sequence[str],
+    folders: Sequence[str],
+    workers: int,
+) -> tuple[MailboxListing, ...]:
+    jobs = tuple((account, folder) for account in accounts for folder in folders)
+    if not jobs:
+        return ()
+
+    worker_count = min(workers, len(jobs))
+    LOGGER.info(
+        "Listing %d mailbox folder(s) with %d worker(s)",
+        len(jobs),
+        worker_count,
+    )
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        return tuple(executor.map(lambda job: _list_mailbox(backend, job), jobs))
 
 
 def _build_backend(config: AppConfig) -> CarbonioBackend:
@@ -87,6 +118,7 @@ def run_doctor(config_path: str) -> int:
     print(f"[INFO] Dry-run: {config.dry_run}")
     print(f"[INFO] Database: {config.database_path}")
     print(f"[INFO] Training batch size: {config.batch_size}")
+    print(f"[INFO] Parallel mailbox listing workers: {config.list_workers}")
     print(f"[INFO] Parallel export workers: {config.export_workers}")
     size_description = (
         "unlimited"
@@ -124,13 +156,12 @@ def run_init(config_path: str) -> int:
             junk_folder=config.junk_folder,
             export_workers=config.export_workers,
         )
-        for account in accounts:
-            for folder in folders:
-                messages = backend.list_messages(account, folder)
-                LOGGER.info("Initializing %s %s: %d message(s)", account, folder, len(messages))
-                for message in messages:
-                    processor.observe(message)
-                    observed += 1
+        listings = _list_mailboxes(backend, accounts, folders, config.list_workers)
+        for account, folder, messages in listings:
+            LOGGER.info("Initializing %s %s: %d message(s)", account, folder, len(messages))
+            for message in messages:
+                processor.observe(message)
+                observed += 1
 
     print(
         f"Initialization complete: {len(accounts)} account(s), "
@@ -148,13 +179,12 @@ def run_scan(config_path: str) -> int:
     scanned = 0
     succeeded = 0
     failed = 0
+    listings = _list_mailboxes(backend, accounts, folders, config.list_workers)
 
     if config.dry_run:
-        for account in accounts:
-            for folder in folders:
-                messages = backend.list_messages(account, folder)
-                scanned += len(messages)
-                print(f"[DRY-RUN] {account} {folder}: {len(messages)} message(s)")
+        for account, folder, messages in listings:
+            scanned += len(messages)
+            print(f"[DRY-RUN] {account} {folder}: {len(messages)} message(s)")
         print(f"Dry-run complete: {len(accounts)} account(s), {scanned} message(s)")
         return 0
 
@@ -168,29 +198,28 @@ def run_scan(config_path: str) -> int:
             junk_folder=config.junk_folder,
             export_workers=config.export_workers,
         )
-        for account in accounts:
-            for folder in folders:
-                messages = list(backend.list_messages(account, folder))
-                LOGGER.info("Scanning %s %s: %d message(s)", account, folder, len(messages))
-                batches = list(_chunks(messages, config.batch_size))
-                for batch_number, batch in enumerate(batches, start=1):
-                    scanned += len(batch)
-                    LOGGER.info(
-                        "Processing batch %d/%d for %s %s (%d message(s))",
-                        batch_number,
-                        len(batches),
-                        account,
-                        folder,
-                        len(batch),
-                    )
-                    try:
-                        result = processor.process_batch(batch)
-                        succeeded += result.successful
-                        failed += result.failed
-                    except Exception:
-                        failed += len(batch)
-                        keys = ", ".join(message.message_key for message in batch)
-                        LOGGER.exception("Failed to process batch containing: %s", keys)
+        for account, folder, messages in listings:
+            messages = list(messages)
+            LOGGER.info("Scanning %s %s: %d message(s)", account, folder, len(messages))
+            batches = list(_chunks(messages, config.batch_size))
+            for batch_number, batch in enumerate(batches, start=1):
+                scanned += len(batch)
+                LOGGER.info(
+                    "Processing batch %d/%d for %s %s (%d message(s))",
+                    batch_number,
+                    len(batches),
+                    account,
+                    folder,
+                    len(batch),
+                )
+                try:
+                    result = processor.process_batch(batch)
+                    succeeded += result.successful
+                    failed += result.failed
+                except Exception:
+                    failed += len(batch)
+                    keys = ", ".join(message.message_key for message in batch)
+                    LOGGER.exception("Failed to process batch containing: %s", keys)
 
     print(
         f"Scan complete: {len(accounts)} account(s), {scanned} message(s), "
