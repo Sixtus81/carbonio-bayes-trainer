@@ -10,6 +10,9 @@ carbonio:
   junk_folder: /Junk
   max_messages_per_folder: 1000
 
+  # Number of mailbox-folder listings started in parallel. Start conservatively.
+  list_workers: 5
+
   # Leave empty to discover all Carbonio accounts automatically.
   # Add addresses here to restrict scanning to selected mailboxes.
   accounts: []
