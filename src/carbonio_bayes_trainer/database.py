@@ -10,6 +10,7 @@ from pathlib import Path
 class MessageState:
     account: str
     message_key: str
+    stable_key: str | None
     folder: str
     trained_as: str | None
     updated_at: str
@@ -32,6 +33,7 @@ class StateDatabase:
             CREATE TABLE IF NOT EXISTS messages (
                 account TEXT NOT NULL,
                 message_key TEXT NOT NULL,
+                stable_key TEXT,
                 folder TEXT NOT NULL,
                 trained_as TEXT CHECK (trained_as IN ('spam', 'ham') OR trained_as IS NULL),
                 updated_at TEXT NOT NULL,
@@ -49,28 +51,69 @@ class StateDatabase:
             );
             """
         )
+        columns = {
+            str(row["name"])
+            for row in self.connection.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        if "stable_key" not in columns:
+            self.connection.execute("ALTER TABLE messages ADD COLUMN stable_key TEXT")
+        self.connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS messages_stable_identity "
+            "ON messages(account, stable_key) WHERE stable_key IS NOT NULL"
+        )
         self.connection.commit()
 
     def get(self, account: str, message_key: str) -> MessageState | None:
         row = self.connection.execute(
-            "SELECT account, message_key, folder, trained_as, updated_at "
+            "SELECT account, message_key, stable_key, folder, trained_as, updated_at "
             "FROM messages WHERE account = ? AND message_key = ?",
             (account, message_key),
         ).fetchone()
         return MessageState(**dict(row)) if row else None
 
-    def upsert(self, account: str, message_key: str, folder: str, trained_as: str | None) -> None:
+    def get_by_stable_key(self, account: str, stable_key: str) -> MessageState | None:
+        row = self.connection.execute(
+            "SELECT account, message_key, stable_key, folder, trained_as, updated_at "
+            "FROM messages WHERE account = ? AND stable_key = ?",
+            (account, stable_key),
+        ).fetchone()
+        return MessageState(**dict(row)) if row else None
+
+    def upsert(
+        self,
+        account: str,
+        message_key: str,
+        folder: str,
+        trained_as: str | None,
+        stable_key: str | None = None,
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
+        if stable_key is not None:
+            existing = self.get_by_stable_key(account, stable_key)
+            if existing is not None and existing.message_key != message_key:
+                self.connection.execute(
+                    "DELETE FROM messages WHERE account = ? AND message_key = ?",
+                    (account, message_key),
+                )
+                self.connection.execute(
+                    "UPDATE messages SET message_key = ?, folder = ?, trained_as = ?, "
+                    "updated_at = ? WHERE account = ? AND stable_key = ?",
+                    (message_key, folder, trained_as, now, account, stable_key),
+                )
+                self.connection.commit()
+                return
+
         self.connection.execute(
             """
-            INSERT INTO messages(account, message_key, folder, trained_as, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO messages(account, message_key, stable_key, folder, trained_as, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(account, message_key) DO UPDATE SET
+                stable_key = COALESCE(excluded.stable_key, messages.stable_key),
                 folder = excluded.folder,
                 trained_as = excluded.trained_as,
                 updated_at = excluded.updated_at
             """,
-            (account, message_key, folder, trained_as, now),
+            (account, message_key, stable_key, folder, trained_as, now),
         )
         self.connection.commit()
 
