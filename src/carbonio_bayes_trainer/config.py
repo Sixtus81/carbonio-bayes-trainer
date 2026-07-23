@@ -31,6 +31,7 @@ class AppConfig:
     max_messages_per_folder: int
     batch_size: int
     export_workers: int = 5
+    list_workers: int = 5
     max_message_size: int = _DEFAULT_MAX_MESSAGE_SIZE
 
 
@@ -68,6 +69,7 @@ def load_config(path: str | Path) -> AppConfig:
 
     interval = int(root.get("scan_interval_seconds", 300))
     limit = int(carbonio.get("max_messages_per_folder", 1000))
+    list_workers = int(carbonio.get("list_workers", 5))
     batch_size = int(trainer.get("batch_size", 50))
     export_workers = int(trainer.get("export_workers", 5))
     max_message_size = int(
@@ -77,6 +79,8 @@ def load_config(path: str | Path) -> AppConfig:
         raise ValueError("scan_interval_seconds must be at least 30")
     if not 1 <= limit <= 1000:
         raise ValueError("max_messages_per_folder must be between 1 and 1000")
+    if not 1 <= list_workers <= 32:
+        raise ValueError("carbonio.list_workers must be between 1 and 32")
     if not 1 <= batch_size <= 1000:
         raise ValueError("trainer.batch_size must be between 1 and 1000")
     if not 1 <= export_workers <= 32:
@@ -100,5 +104,6 @@ def load_config(path: str | Path) -> AppConfig:
         max_messages_per_folder=limit,
         batch_size=batch_size,
         export_workers=export_workers,
+        list_workers=list_workers,
         max_message_size=max_message_size,
     )
