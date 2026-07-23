@@ -6,6 +6,7 @@ def state(folder: str, trained_as: str | None) -> MessageState:
     return MessageState(
         account="user@example.com",
         message_key="message-1",
+        stable_key="<stable@example.com>",
         folder=folder,
         trained_as=trained_as,
         updated_at="2026-07-22T00:00:00+00:00",

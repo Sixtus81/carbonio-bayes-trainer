@@ -19,7 +19,15 @@ class FakeBackend:
 
     def export_message(self, message: MailboxMessage, destination: Path) -> None:
         self.exports += 1
-        destination.write_text("Subject: test\n\nbody\n", encoding="utf-8")
+        destination.write_text(
+            "Message-ID: <stable@example.com>\n"
+            "Subject: test\n"
+            "\n"
+            "body\n",
+            encoding="utf-8",
+        )
+    def stable_message_key(self, message: MailboxMessage) -> str:
+        return "message-id:<stable@example.com>"
 
 
 class FakeTrainer:
@@ -93,6 +101,33 @@ def test_spam_returned_to_inbox_is_ham(tmp_path: Path) -> None:
 
     assert trainer.actions == ["spam", "ham"]
     assert backend.exports == 2
+
+
+def test_spam_returned_to_inbox_with_changed_internal_id_is_ham(tmp_path: Path) -> None:
+    backend = FakeBackend()
+    trainer = FakeTrainer()
+
+    with StateDatabase(tmp_path / "state.db") as database:
+        processor = MessageProcessor(
+            backend,
+            database,
+            trainer,
+            "/Inbox",
+            "/Junk",
+        )
+        assert processor.process(
+            MailboxMessage("user@example.com", "junk-id", "/Junk")
+        )
+        assert processor.process(
+            MailboxMessage("user@example.com", "inbox-id", "/Inbox")
+        )
+
+        state = database.get("user@example.com", "inbox-id")
+
+    assert trainer.actions == ["spam", "ham"]
+    assert state is not None
+    assert state.stable_key == "message-id:<stable@example.com>"
+    assert state.trained_as == "ham"
 
 
 def test_failed_training_batch_is_retried_individually(tmp_path: Path) -> None:

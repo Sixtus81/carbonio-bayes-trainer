@@ -26,3 +26,6 @@ class MailboxBackend(Protocol):
 
     def export_message(self, message: MailboxMessage, destination: Path) -> None:
         """Export the complete RFC822 message to destination."""
+
+    def stable_message_key(self, message: MailboxMessage) -> str:
+        """Return a folder-independent identity for the message."""
