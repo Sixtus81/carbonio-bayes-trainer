@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import subprocess
+import tempfile
 from collections.abc import Callable, Sequence
+from email import policy
+from email.parser import BytesHeaderParser
 from pathlib import Path
 
 from .backend import MailboxMessage
@@ -106,6 +110,21 @@ class CarbonioBackend:
         )
         self._require_success(result, f"RFC822 export for {message.account}:{message.message_key}")
         self._validate_rfc822(destination)
+
+    def stable_message_key(self, message: MailboxMessage) -> str:
+        with tempfile.TemporaryDirectory(prefix="carbonio-identity-") as temp_dir:
+            path = Path(temp_dir) / f"{message.message_key}.eml"
+            self.export_message(message, path)
+            return self._stable_key_from_rfc822(path)
+
+    @staticmethod
+    def _stable_key_from_rfc822(path: Path) -> str:
+        raw = path.read_bytes()
+        parsed = BytesHeaderParser(policy=policy.default).parsebytes(raw)
+        message_id = str(parsed.get("Message-ID", "")).strip()
+        if message_id:
+            return f"message-id:{message_id.lower()}"
+        return f"sha256:{hashlib.sha256(raw).hexdigest()}"
 
     @staticmethod
     def _require_success(result: subprocess.CompletedProcess[str], operation: str) -> None:
