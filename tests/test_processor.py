@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from pathlib import Path
 
-from carbonio_bayes_trainer.backend import MailboxMessage
+from carbonio_bayes_trainer.backend import MailboxMessage, MailboxMessageUnavailable
 from carbonio_bayes_trainer.database import StateDatabase
 from carbonio_bayes_trainer.processor import BatchResult, MessageProcessor
 from carbonio_bayes_trainer.state_engine import TrainingAction
@@ -36,6 +36,23 @@ class FailingIdentityBackend(FakeBackend):
         if message.message_key == "broken":
             raise RuntimeError("invalid RFC822 export")
         return f"message-id:<{message.message_key}@example.com>"
+
+
+class UnavailableIdentityBackend(FakeBackend):
+    def stable_message_key(self, message: MailboxMessage) -> str:
+        if message.message_key == "gone":
+            raise MailboxMessageUnavailable("404 Not Found")
+        return f"message-id:<{message.message_key}@example.com>"
+
+
+class UnavailableExportBackend(FakeBackend):
+    def stable_message_key(self, message: MailboxMessage) -> str:
+        return f"message-id:<{message.message_key}@example.com>"
+
+    def export_message(self, message: MailboxMessage, destination: Path) -> None:
+        if message.message_key == "gone":
+            raise MailboxMessageUnavailable("message disappeared")
+        super().export_message(message, destination)
 
 
 class FakeTrainer:
@@ -187,3 +204,55 @@ def test_identity_failure_skips_only_the_affected_message(tmp_path: Path) -> Non
     assert broken_state is None
     assert working_state is not None
     assert working_state.trained_as == "spam"
+
+
+def test_unavailable_identity_is_counted_as_skipped(tmp_path: Path) -> None:
+    backend = UnavailableIdentityBackend()
+    trainer = FakeTrainer()
+    messages = (
+        MailboxMessage("user@example.com", "gone", "/Junk"),
+        MailboxMessage("user@example.com", "working", "/Junk"),
+    )
+
+    with StateDatabase(tmp_path / "state.db") as database:
+        processor = MessageProcessor(
+            backend,
+            database,
+            trainer,
+            "/Inbox",
+            "/Junk",
+        )
+        result = processor.process_batch(messages)
+
+    assert result == BatchResult(successful=1, skipped=1)
+    assert trainer.actions == ["spam"]
+
+
+def test_unavailable_training_export_skips_only_affected_message(tmp_path: Path) -> None:
+    backend = UnavailableExportBackend()
+    trainer = FakeTrainer()
+    messages = (
+        MailboxMessage("user@example.com", "gone", "/Junk"),
+        MailboxMessage("user@example.com", "working", "/Junk"),
+    )
+
+    with StateDatabase(tmp_path / "state.db") as database:
+        database.upsert("user@example.com", "gone", "/Inbox", None, "stable-gone")
+        database.upsert(
+            "user@example.com",
+            "working",
+            "/Inbox",
+            None,
+            "stable-working",
+        )
+        processor = MessageProcessor(
+            backend,
+            database,
+            trainer,
+            "/Inbox",
+            "/Junk",
+        )
+        result = processor.process_batch(messages)
+
+    assert result == BatchResult(successful=1, skipped=1)
+    assert trainer.actions == ["spam"]
