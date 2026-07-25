@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Protocol
 
 
+class MailboxMessageUnavailable(RuntimeError):
+    """A listed message disappeared or cannot be exported as RFC822."""
+
+
 @dataclass(frozen=True)
 class MailboxMessage:
     """Minimal message metadata required by the transition engine."""
