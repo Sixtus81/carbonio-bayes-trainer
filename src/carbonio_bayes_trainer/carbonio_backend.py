@@ -120,8 +120,12 @@ class CarbonioBackend:
     @staticmethod
     def _stable_key_from_rfc822(path: Path) -> str:
         raw = path.read_bytes()
-        parsed = BytesHeaderParser(policy=policy.default).parsebytes(raw)
-        message_id = str(parsed.get("Message-ID", "")).strip()
+        try:
+            parsed = BytesHeaderParser(policy=policy.compat32).parsebytes(raw)
+            message_id = (parsed.get("Message-ID") or "").strip()
+        except Exception:
+            message_id = ""
+
         if message_id:
             return f"message-id:{message_id.lower()}"
         return f"sha256:{hashlib.sha256(raw).hexdigest()}"

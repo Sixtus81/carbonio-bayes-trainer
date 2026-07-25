@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -108,3 +109,41 @@ def test_export_message_rejects_empty_file(tmp_path: Path) -> None:
             MailboxMessage("user@example.test", "10151", "/Junk"),
             tmp_path / "message.eml",
         )
+
+
+def test_malformed_message_id_is_used_without_strict_header_parsing(tmp_path: Path) -> None:
+    path = tmp_path / "malformed.eml"
+    message_id = "<[broken-local-part@example.test]>"
+    path.write_bytes(
+        b"Received: by mail.example.test\r\n"
+        + f"Message-ID: {message_id}\r\n".encode()
+        + b"MIME-Version: 1.0\r\n\r\nbody"
+    )
+
+    assert CarbonioBackend._stable_key_from_rfc822(path) == (
+        f"message-id:{message_id.lower()}"
+    )
+
+
+def test_unreadable_message_id_falls_back_to_sha256(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "fallback.eml"
+    raw = b"Received: by mail.example.test\r\nMessage-ID: <x@example.test>\r\n\r\nbody"
+    path.write_bytes(raw)
+
+    class BrokenParser:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def parsebytes(self, raw_message: bytes) -> object:
+            raise IndexError("parser bug")
+
+    monkeypatch.setattr(
+        "carbonio_bayes_trainer.carbonio_backend.BytesHeaderParser", BrokenParser
+    )
+
+    assert CarbonioBackend._stable_key_from_rfc822(path) == (
+        f"sha256:{hashlib.sha256(raw).hexdigest()}"
+    )

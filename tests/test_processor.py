@@ -26,8 +26,16 @@ class FakeBackend:
             "body\n",
             encoding="utf-8",
         )
+
     def stable_message_key(self, message: MailboxMessage) -> str:
         return "message-id:<stable@example.com>"
+
+
+class FailingIdentityBackend(FakeBackend):
+    def stable_message_key(self, message: MailboxMessage) -> str:
+        if message.message_key == "broken":
+            raise RuntimeError("invalid RFC822 export")
+        return f"message-id:<{message.message_key}@example.com>"
 
 
 class FakeTrainer:
@@ -152,3 +160,30 @@ def test_failed_training_batch_is_retried_individually(tmp_path: Path) -> None:
     assert result == BatchResult(successful=1, failed=1)
     assert trainer.batch_sizes == [2, 1, 1]
     assert stats["spam"] == 1
+
+
+def test_identity_failure_skips_only_the_affected_message(tmp_path: Path) -> None:
+    backend = FailingIdentityBackend()
+    trainer = FakeTrainer()
+    messages = (
+        MailboxMessage("user@example.com", "broken", "/Junk"),
+        MailboxMessage("user@example.com", "working", "/Junk"),
+    )
+
+    with StateDatabase(tmp_path / "state.db") as database:
+        processor = MessageProcessor(
+            backend,
+            database,
+            trainer,
+            "/Inbox",
+            "/Junk",
+        )
+        result = processor.process_batch(messages)
+        broken_state = database.get("user@example.com", "broken")
+        working_state = database.get("user@example.com", "working")
+
+    assert result == BatchResult(successful=1, failed=1)
+    assert trainer.actions == ["spam"]
+    assert broken_state is None
+    assert working_state is not None
+    assert working_state.trained_as == "spam"
