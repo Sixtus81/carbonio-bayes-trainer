@@ -97,10 +97,21 @@ class MessageProcessor:
             "ham": [],
         }
         successful = 0
+        failed = 0
 
         for message in messages:
-            previous = self.database.get(message.account, message.message_key)
-            previous, stable_key = self._resolve_previous(message, previous)
+            try:
+                previous = self.database.get(message.account, message.message_key)
+                previous, stable_key = self._resolve_previous(message, previous)
+            except Exception as exc:
+                LOGGER.exception(
+                    "Skipping message %s for %s because identity resolution failed: %s",
+                    message.message_key,
+                    message.account,
+                    exc,
+                )
+                failed += 1
+                continue
 
             decision = decide_transition(
                 previous,
@@ -130,7 +141,7 @@ class MessageProcessor:
 
             pending[decision.action].append((message, decision.reason, stable_key))
 
-        result = BatchResult(successful=successful)
+        result = BatchResult(successful=successful, failed=failed)
 
         for action, items in pending.items():
             if items:
