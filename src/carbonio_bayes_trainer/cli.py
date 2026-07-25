@@ -179,6 +179,7 @@ def run_scan(config_path: str) -> int:
     scanned = 0
     succeeded = 0
     failed = 0
+    skipped = 0
     listings = _list_mailboxes(backend, accounts, folders, config.list_workers)
 
     if config.dry_run:
@@ -216,6 +217,7 @@ def run_scan(config_path: str) -> int:
                     result = processor.process_batch(batch)
                     succeeded += result.successful
                     failed += result.failed
+                    skipped += result.skipped
                 except Exception:
                     failed += len(batch)
                     keys = ", ".join(message.message_key for message in batch)
@@ -223,7 +225,7 @@ def run_scan(config_path: str) -> int:
 
     print(
         f"Scan complete: {len(accounts)} account(s), {scanned} message(s), "
-        f"{succeeded} successful, {failed} failed"
+        f"{succeeded} successful, {skipped} skipped, {failed} failed"
     )
     return 1 if failed else 0
 
