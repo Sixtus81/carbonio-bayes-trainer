@@ -125,7 +125,10 @@ def test_malformed_message_id_is_used_without_strict_header_parsing(tmp_path: Pa
     )
 
 
-def test_unreadable_message_id_falls_back_to_sha256(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unreadable_message_id_falls_back_to_sha256(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     path = tmp_path / "fallback.eml"
     raw = b"Received: by mail.example.test\r\nMessage-ID: <x@example.test>\r\n\r\nbody"
     path.write_bytes(raw)
