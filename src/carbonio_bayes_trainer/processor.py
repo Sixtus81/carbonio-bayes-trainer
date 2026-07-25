@@ -3,13 +3,13 @@ from __future__ import annotations
 import logging
 import tempfile
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Protocol
 
-from .backend import MailboxBackend, MailboxMessage
+from .backend import MailboxBackend, MailboxMessage, MailboxMessageUnavailable
 from .database import MessageState, StateDatabase
 from .state_engine import TrainingAction, decide_transition
 
@@ -31,11 +31,13 @@ class TrainingBackend(Protocol):
 class BatchResult:
     successful: int = 0
     failed: int = 0
+    skipped: int = 0
 
     def __add__(self, other: BatchResult) -> BatchResult:
         return BatchResult(
             successful=self.successful + other.successful,
             failed=self.failed + other.failed,
+            skipped=self.skipped + other.skipped,
         )
 
 
@@ -98,11 +100,21 @@ class MessageProcessor:
         }
         successful = 0
         failed = 0
+        skipped = 0
 
         for message in messages:
             try:
                 previous = self.database.get(message.account, message.message_key)
                 previous, stable_key = self._resolve_previous(message, previous)
+            except MailboxMessageUnavailable as exc:
+                LOGGER.warning(
+                    "Message %s for %s disappeared or cannot be exported; skipping: %s",
+                    message.message_key,
+                    message.account,
+                    exc,
+                )
+                skipped += 1
+                continue
             except Exception as exc:
                 LOGGER.exception(
                     "Skipping message %s for %s because identity resolution failed: %s",
@@ -130,7 +142,6 @@ class MessageProcessor:
                     trained_as,
                     stable_key,
                 )
-
                 LOGGER.debug(
                     "No training for %s: %s",
                     message.message_key,
@@ -141,7 +152,7 @@ class MessageProcessor:
 
             pending[decision.action].append((message, decision.reason, stable_key))
 
-        result = BatchResult(successful=successful, failed=failed)
+        result = BatchResult(successful=successful, failed=failed, skipped=skipped)
 
         for action, items in pending.items():
             if items:
@@ -255,10 +266,10 @@ class MessageProcessor:
         with tempfile.TemporaryDirectory(prefix="carbonio-bayes-") as temp_dir:
             exports = [
                 (
-                    message,
-                    Path(temp_dir) / f"{index:04d}-{message.message_key}.eml",
+                    item,
+                    Path(temp_dir) / f"{index:04d}-{item[0].message_key}.eml",
                 )
-                for index, (message, _, _) in enumerate(items, start=1)
+                for index, item in enumerate(items, start=1)
             ]
             export_started = perf_counter()
             worker_count = min(self.export_workers, len(exports))
@@ -269,25 +280,57 @@ class MessageProcessor:
                 worker_count,
             )
 
+            exported_items: list[PendingItem] = []
+            paths: list[Path] = []
+            result = BatchResult()
             with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                paths = list(executor.map(self._export_message, exports))
+                futures = {
+                    executor.submit(self._export_message, (item[0], path)): (item, path)
+                    for item, path in exports
+                }
+                for future in as_completed(futures):
+                    item, path = futures[future]
+                    message = item[0]
+                    try:
+                        future.result()
+                    except MailboxMessageUnavailable as exc:
+                        LOGGER.warning(
+                            "Message %s for %s disappeared before training; skipping: %s",
+                            message.message_key,
+                            message.account,
+                            exc,
+                        )
+                        result += BatchResult(skipped=1)
+                    except Exception as exc:
+                        LOGGER.exception(
+                            "Export failed for message %s for %s: %s",
+                            message.message_key,
+                            message.account,
+                            exc,
+                        )
+                        result += BatchResult(failed=1)
+                    else:
+                        exported_items.append(item)
+                        paths.append(path)
 
             export_seconds = perf_counter() - export_started
             LOGGER.info(
-                "Exported %d message(s) for %s training in %.3f s",
+                "Exported %d of %d message(s) for %s training in %.3f s",
                 len(paths),
+                len(items),
                 action,
                 export_seconds,
             )
 
             database_started = perf_counter()
-            result = self._train_exported(action, items, paths)
+            if paths:
+                result += self._train_exported(action, exported_items, paths)
             database_seconds = perf_counter() - database_started
 
         batch_seconds = perf_counter() - batch_started
         LOGGER.info(
             "Updated database for %d message(s) in %.3f s; whole batch took %.3f s",
-            len(items),
+            len(exported_items),
             database_seconds,
             batch_seconds,
         )

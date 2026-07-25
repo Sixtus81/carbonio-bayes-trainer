@@ -9,7 +9,7 @@ from email import policy
 from email.parser import BytesHeaderParser
 from pathlib import Path
 
-from .backend import MailboxMessage
+from .backend import MailboxMessage, MailboxMessageUnavailable
 
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
@@ -135,12 +135,16 @@ class CarbonioBackend:
         if result.returncode == 0:
             return
         details = result.stderr.strip() or result.stdout.strip() or "no command output"
+        normalized = details.lower()
+        unavailable_markers = ("no_such_msg", "no such message", "status=404", "404. not found")
+        if any(marker in normalized for marker in unavailable_markers):
+            raise MailboxMessageUnavailable(f"Carbonio {operation} unavailable: {details}")
         raise RuntimeError(f"Carbonio {operation} failed: {details}")
 
     @staticmethod
     def _validate_rfc822(path: Path) -> None:
         if not path.is_file() or path.stat().st_size == 0:
-            raise RuntimeError("Carbonio export produced an empty RFC822 file")
+            raise MailboxMessageUnavailable("Carbonio export produced an empty RFC822 file")
 
         with path.open("rb") as handle:
             header_block = handle.read(256 * 1024).split(b"\r\n\r\n", 1)[0]
@@ -148,6 +152,8 @@ class CarbonioBackend:
         normalized = header_block.lower()
         required = (b"message-id:", b"received:")
         if not all(header in normalized for header in required):
-            raise RuntimeError("Carbonio export is missing required RFC822 headers")
+            raise MailboxMessageUnavailable(
+                "Carbonio export is missing required RFC822 headers"
+            )
         if b"mime-version:" not in normalized and b"content-type:" not in normalized:
-            raise RuntimeError("Carbonio export is missing MIME metadata")
+            raise MailboxMessageUnavailable("Carbonio export is missing MIME metadata")
