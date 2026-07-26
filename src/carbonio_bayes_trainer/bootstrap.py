@@ -104,6 +104,8 @@ class HamBootstrapper:
 
             for folder in folders:
                 archive = self._export_folder(account, folder.folder_id)
+                if archive is None:
+                    continue
                 with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
                     for member in tar:
                         if not member.isfile() or not member.name.lower().endswith(".eml"):
@@ -146,7 +148,7 @@ class HamBootstrapper:
             duration_seconds=time.monotonic() - started,
         )
 
-    def _export_folder(self, account: str, folder_id: int) -> bytes:
+    def _export_folder(self, account: str, folder_id: int) -> bytes | None:
         result = subprocess.run(
             [
                 self.zmmailbox_path,
@@ -163,9 +165,12 @@ class HamBootstrapper:
         )
         if result.returncode != 0:
             details = result.stderr.decode(errors="replace").strip() or "no command output"
+            normalized = details.lower()
+            if "status=204" in normalized or "no content" in normalized:
+                return None
             raise RuntimeError(f"Carbonio folder export failed: {details}")
         if not result.stdout:
-            raise RuntimeError(f"Carbonio folder export for ID {folder_id} was empty")
+            return None
         return result.stdout
 
     @staticmethod
