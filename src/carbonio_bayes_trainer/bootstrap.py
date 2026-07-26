@@ -6,6 +6,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +28,9 @@ class BootstrapResult:
     learned: int
     failed: int
     duration_seconds: float
+
+
+ProgressCallback = Callable[[int, int, MailFolder, int | None], None]
 
 
 class HamBootstrapper:
@@ -88,6 +92,7 @@ class HamBootstrapper:
         recursive: bool = False,
         dry_run: bool = False,
         limit: int | None = None,
+        progress: ProgressCallback | None = None,
     ) -> BootstrapResult:
         if limit is not None and limit < 1:
             raise ValueError("limit must be at least 1")
@@ -97,38 +102,46 @@ class HamBootstrapper:
         exported = 0
         learned = 0
         failed = 0
+        total_folders = len(folders)
 
         with tempfile.TemporaryDirectory(prefix="carbonio-bootstrap-ham-") as temp_dir:
             temp_path = Path(temp_dir)
             pending: list[Path] = []
 
-            for folder in folders:
-                archive = self._export_folder(account, folder.folder_id)
-                if archive is None:
-                    continue
-                with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
-                    for member in tar:
-                        if not member.isfile() or not member.name.lower().endswith(".eml"):
-                            continue
-                        if limit is not None and exported >= limit:
-                            break
-                        source = tar.extractfile(member)
-                        if source is None:
-                            continue
-                        exported += 1
-                        message_path = temp_path / f"{exported:08d}.eml"
-                        message_path.write_bytes(source.read())
-                        pending.append(message_path)
+            for folder_number, folder in enumerate(folders, start=1):
+                if progress is not None:
+                    progress(folder_number, total_folders, folder, None)
 
-                        if not dry_run and len(pending) >= self.batch_size:
-                            ok, _ = self.trainer.train_batch(tuple(pending), "ham")
-                            if ok:
-                                learned += len(pending)
-                            else:
-                                failed += len(pending)
-                            for path in pending:
-                                path.unlink(missing_ok=True)
-                            pending.clear()
+                folder_exported = 0
+                archive = self._export_folder(account, folder.folder_id)
+                if archive is not None:
+                    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
+                        for member in tar:
+                            if not member.isfile() or not member.name.lower().endswith(".eml"):
+                                continue
+                            if limit is not None and exported >= limit:
+                                break
+                            source = tar.extractfile(member)
+                            if source is None:
+                                continue
+                            exported += 1
+                            folder_exported += 1
+                            message_path = temp_path / f"{exported:08d}.eml"
+                            message_path.write_bytes(source.read())
+                            pending.append(message_path)
+
+                            if not dry_run and len(pending) >= self.batch_size:
+                                ok, _ = self.trainer.train_batch(tuple(pending), "ham")
+                                if ok:
+                                    learned += len(pending)
+                                else:
+                                    failed += len(pending)
+                                for path in pending:
+                                    path.unlink(missing_ok=True)
+                                pending.clear()
+
+                if progress is not None:
+                    progress(folder_number, total_folders, folder, folder_exported)
 
                 if limit is not None and exported >= limit:
                     break
