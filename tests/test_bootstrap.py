@@ -72,14 +72,14 @@ def test_duplicate_archive_names_are_all_learned(monkeypatch) -> None:
             type("Folder", (), {"folder_id": 55777, "path": folder_path})(),
         ),
     )
-    def fake_export(account: str, folder_id: int):
+def fake_export(account: str, folder_id: int):
     return _tgz_with_duplicate_names(5)
 
-    monkeypatch.setattr(
-        bootstrapper,
-        "_export_folder",
-        fake_export,
-    )
+monkeypatch.setattr(
+    bootstrapper,
+    "_export_folder",
+    fake_export,
+)
 
     result = bootstrapper.run(
         account="user@example.test",
