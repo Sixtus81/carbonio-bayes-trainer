@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "carbonio-bayes-trainer"
-version = "0.2.4"
+version = "0.3.0"
 description = "Client-independent SpamAssassin Bayes training for Carbonio CE"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,7 +32,7 @@ dev = [
 ]
 
 [project.scripts]
-carbonio-bayes-trainer = "carbonio_bayes_trainer.cli:main"
+carbonio-bayes-trainer = "carbonio_bayes_trainer.entrypoint:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/carbonio_bayes_trainer"]
