@@ -23,7 +23,12 @@ def _tgz_with_duplicate_names(count: int) -> bytes:
     output = io.BytesIO()
     with tarfile.open(fileobj=output, mode="w:gz") as archive:
         for number in range(count):
-            content = f"From: sender{number}@example.test\nSubject: Message {number}\n\nBody\n".encode()
+            content = (
+                f"From: sender{number}@example.test\n"
+                f"Subject: Message {number}\n"
+                "\n"
+                "Body\n"
+            ).encode()
             info = tarfile.TarInfo("message.eml")
             info.size = len(content)
             archive.addfile(info, io.BytesIO(content))
@@ -67,7 +72,14 @@ def test_duplicate_archive_names_are_all_learned(monkeypatch) -> None:
             type("Folder", (), {"folder_id": 55777, "path": folder_path})(),
         ),
     )
-    monkeypatch.setattr(bootstrapper, "_export_folder", lambda account, folder_id: _tgz_with_duplicate_names(5))
+    def fake_export(account: str, folder_id: int):
+    return _tgz_with_duplicate_names(5)
+
+    monkeypatch.setattr(
+        bootstrapper,
+        "_export_folder",
+        fake_export,
+    )
 
     result = bootstrapper.run(
         account="user@example.test",
