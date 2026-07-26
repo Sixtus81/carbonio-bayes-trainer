@@ -90,3 +90,4 @@ monkeypatch.setattr(
     assert result.learned == 5
     assert result.failed == 0
     assert [len(batch) for batch in trainer.batches] == [2, 2, 1]
+
