@@ -4,7 +4,7 @@ import argparse
 import logging
 import sys
 
-from .bootstrap import HamBootstrapper
+from .bootstrap import HamBootstrapper, MailFolder
 from .cli import main as legacy_main
 from .config import load_config
 from .spamassassin import SpamAssassinTrainer
@@ -23,6 +23,22 @@ def _bootstrap_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=int, help="Maximum number of messages to process")
     parser.add_argument("--verbose", action="store_true")
     return parser
+
+
+def _print_progress(
+    folder_number: int,
+    total_folders: int,
+    folder: MailFolder,
+    exported: int | None,
+) -> None:
+    prefix = f"[{folder_number:>{len(str(total_folders))}}/{total_folders}]"
+    if exported is None:
+        print(f"{prefix} Exporting {folder.path} ...", flush=True)
+        return
+
+    suffix = "message" if exported == 1 else "messages"
+    empty = " (empty)" if exported == 0 else ""
+    print(f"{prefix} Done: {exported} {suffix}{empty}", flush=True)
 
 
 def run_bootstrap(argv: list[str]) -> int:
@@ -56,8 +72,10 @@ def run_bootstrap(argv: list[str]) -> int:
         recursive=args.recursive,
         dry_run=args.dry_run,
         limit=args.limit,
+        progress=_print_progress,
     )
 
+    print()
     print("Ham bootstrap complete")
     print(f"Folders:  {result.folders}")
     print(f"Exported: {result.exported}")
