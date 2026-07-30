@@ -19,6 +19,7 @@ from .spamassassin import SpamAssassinTrainer
 LOGGER = logging.getLogger(__name__)
 T = TypeVar("T")
 MailboxListing = tuple[str, str, Sequence[MailboxMessage]]
+_BAYES_COUNTER = re.compile(r"non-token data: (nspam|nham|ntokens)$")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -97,12 +98,26 @@ def _accounts(config: AppConfig, backend: CarbonioBackend) -> tuple[str, ...]:
 def _build_trainer(config: AppConfig) -> SpamAssassinTrainer:
     return SpamAssassinTrainer(
         sa_learn_path=config.sa_learn_path,
+        spamassassin_home=config.spamassassin_home,
         max_message_size=config.max_message_size,
     )
 
 
+def _bayes_counters(output: str) -> dict[str, int]:
+    counters: dict[str, int] = {}
+    for line in output.splitlines():
+        match = _BAYES_COUNTER.search(line.strip())
+        if not match:
+            continue
+        fields = line.split()
+        if len(fields) >= 3:
+            counters[match.group(1)] = int(fields[2])
+    return counters
+
+
 def run_doctor(config_path: str) -> int:
     config = load_config(config_path)
+    trainer = _build_trainer(config)
     checks = [
         ("Configuration", True, config_path),
         ("sa-learn", Path(config.sa_learn_path).is_file(), config.sa_learn_path),
@@ -115,6 +130,34 @@ def run_doctor(config_path: str) -> int:
         symbol = "OK" if success else "FAIL"
         print(f"[{symbol:4}] {name}: {details}")
         failed = failed or not success
+
+    if config.spamassassin_home is None:
+        print("[WARN] SpamAssassin HOME: process default")
+        print("[WARN] Carbonio commonly uses /opt/zextras/data/amavisd")
+    else:
+        home_exists = config.spamassassin_home.is_dir()
+        symbol = "OK" if home_exists else "FAIL"
+        print(f"[{symbol:4}] SpamAssassin HOME: {config.spamassassin_home}")
+        failed = failed or not home_exists
+        bayes_directory = trainer.bayes_directory
+        bayes_files = trainer.existing_bayes_files()
+        if bayes_files:
+            names = ", ".join(path.name for path in bayes_files)
+            print(f"[OK  ] Bayes database: {bayes_directory} ({names})")
+        else:
+            print(f"[WARN] Bayes database: no bayes_* files found in {bayes_directory}")
+
+    if Path(config.sa_learn_path).is_file():
+        success, output = trainer.dump_magic()
+        if success:
+            counters = _bayes_counters(output)
+            print(f"[INFO] Bayes spam: {counters.get('nspam', 'unknown')}")
+            print(f"[INFO] Bayes ham: {counters.get('nham', 'unknown')}")
+            print(f"[INFO] Bayes tokens: {counters.get('ntokens', 'unknown')}")
+        else:
+            print("[FAIL] Unable to read Bayes statistics with sa-learn --dump magic")
+            failed = True
+
     print(f"[INFO] Dry-run: {config.dry_run}")
     print(f"[INFO] Database: {config.database_path}")
     print(f"[INFO] Training batch size: {config.batch_size}")
