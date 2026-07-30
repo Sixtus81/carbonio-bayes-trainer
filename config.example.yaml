@@ -19,6 +19,11 @@ carbonio:
 
 trainer:
   sa_learn_path: /opt/zextras/common/bin/sa-learn
+
+  # Carbonio Amavis uses this HOME and therefore this Bayes database:
+  # /opt/zextras/data/amavisd/.spamassassin
+  home: /opt/zextras/data/amavisd
+
   batch_size: 50
 
   # Number of RFC822 exports started in parallel. Start conservatively.
