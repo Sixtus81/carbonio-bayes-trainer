@@ -14,7 +14,7 @@ NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
 ReadWritePaths=/var/lib/carbonio-bayes-trainer
-ReadWritePaths=/opt/zextras/.spamassassin
+ReadWritePaths=/opt/zextras/data/amavisd/.spamassassin
 
 [Install]
 WantedBy=multi-user.target
