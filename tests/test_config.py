@@ -19,6 +19,7 @@ def test_load_config_defaults(tmp_path: Path) -> None:
     assert config.batch_size == 50
     assert config.export_workers == 5
     assert config.max_message_size == 10 * 1024 * 1024
+    assert config.spamassassin_home is None
     assert r"^spam\." in config.exclude_accounts
     assert r"^ham\." in config.exclude_accounts
 
@@ -57,6 +58,29 @@ def test_loads_custom_max_message_size(tmp_path: Path) -> None:
     config = load_config(config_file)
 
     assert config.max_message_size == 0
+
+
+def test_loads_custom_spamassassin_home(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "trainer:\n  home: /opt/zextras/data/amavisd\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_file)
+
+    assert config.spamassassin_home == Path("/opt/zextras/data/amavisd")
+
+
+def test_rejects_invalid_spamassassin_home(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "trainer:\n  home:\n    invalid: mapping\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="trainer.home must be a path string or null"):
+        load_config(config_file)
 
 
 def test_rejects_short_scan_interval(tmp_path: Path) -> None:
