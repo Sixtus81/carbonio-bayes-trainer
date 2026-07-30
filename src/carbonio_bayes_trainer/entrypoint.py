@@ -50,6 +50,7 @@ def run_bootstrap(argv: list[str]) -> int:
     config = load_config(args.config)
     trainer = SpamAssassinTrainer(
         sa_learn_path=config.sa_learn_path,
+        spamassassin_home=config.spamassassin_home,
         max_message_size=config.max_message_size,
     )
     bootstrapper = HamBootstrapper(
@@ -64,6 +65,7 @@ def run_bootstrap(argv: list[str]) -> int:
     print(f"Mode:      {'dry-run' if args.dry_run else 'learn'}")
     if args.limit is not None:
         print(f"Limit:     {args.limit}")
+    print(f"SA HOME:   {config.spamassassin_home or 'process default'}")
     print()
 
     result = bootstrapper.run(
