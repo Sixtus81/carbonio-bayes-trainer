@@ -56,17 +56,50 @@ carbonio:
 
 `list_workers` legt fest, wie viele Inbox-/Junk-Abfragen gleichzeitig gestartet werden. Der Standardwert ist `5`. Höhere Werte können den Scan weiter beschleunigen, belasten Carbonio aber stärker.
 
-Der Abschnitt `trainer` steuert Batch-Größe, parallele Exporte und die maximale Nachrichtengröße für `sa-learn`:
+Der Abschnitt `trainer` steuert das SpamAssassin-HOME, die Batch-Größe, parallele Exporte und die maximale Nachrichtengröße für `sa-learn`:
 
 ```yaml
 trainer:
   sa_learn_path: /opt/zextras/common/bin/sa-learn
+  home: /opt/zextras/data/amavisd
   batch_size: 50
   export_workers: 3
   max_message_size: 10485760
 ```
 
+Carbonio-Amavis verwendet normalerweise die globale Bayes-Datenbank unter:
+
+```text
+/opt/zextras/data/amavisd/.spamassassin
+```
+
+Mit `trainer.home: /opt/zextras/data/amavisd` verwendet der Trainer dieselbe Bayes-Datenbank wie Amavis im produktiven Mailfluss. Das Training wirkt dadurch global für alle von dieser Amavis-Instanz verarbeiteten Postfächer.
+
+Wird `trainer.home` nicht gesetzt oder auf `null` gesetzt, übernimmt `sa-learn` das HOME des laufenden Prozesses. Auf Carbonio kann dies zur separaten Datenbank `/opt/zextras/.spamassassin` führen und ist daher normalerweise nicht gewünscht.
+
 `max_message_size` wird in Bytes angegeben. Der Standardwert beträgt 10 MiB. Der Wert `0` deaktiviert das Größenlimit. Damit werden auch Nachrichten verarbeitet, die über dem internen Standardlimit von `sa-learn` liegen.
+
+## Upgrade von v0.3.0
+
+Bestehende Konfigurationen müssen um das produktive Amavis-HOME ergänzt werden:
+
+```yaml
+trainer:
+  home: /opt/zextras/data/amavisd
+```
+
+Danach den aktualisierten systemd-Dienst installieren:
+
+```bash
+cd /opt/carbonio-bayes-trainer
+git pull
+.venv/bin/pip install .
+cp systemd/carbonio-bayes-trainer.service /etc/systemd/system/
+systemctl daemon-reload
+.venv/bin/carbonio-bayes-trainer --config /etc/carbonio-bayes-trainer.yaml doctor
+```
+
+Falls ältere Versionen bereits trainiert haben, lagen diese Lernvorgänge möglicherweise in `/opt/zextras/.spamassassin`. Nach dem Upgrade sollten Ham-Bootstrap und Spam-Training kontrolliert gegen die produktive Datenbank erneut ausgeführt werden.
 
 ## systemd
 
@@ -77,7 +110,7 @@ systemctl daemon-reload
 systemctl enable --now carbonio-bayes-trainer.timer
 ```
 
-Der Dienst erlaubt Schreibzugriffe auf die eigene SQLite-Datenbank und auf die SpamAssassin-Bayes-Datenbank unter `/opt/zextras/.spamassassin`. Diese Freigabe wird für `bayes.mutex`, `bayes_seen` und `bayes_toks` benötigt.
+Der Dienst erlaubt Schreibzugriffe auf die eigene SQLite-Datenbank und auf die produktive SpamAssassin-Bayes-Datenbank unter `/opt/zextras/data/amavisd/.spamassassin`. Diese Freigabe wird unter anderem für `bayes.mutex`, `bayes_seen`, `bayes_toks` und `bayes_journal` benötigt.
 
 Status und Protokoll:
 
@@ -99,7 +132,9 @@ Der Trainer fragt je Postfach die Nachrichten in `/Inbox` und `/Junk` über `zmm
 
 Carbonio kann beim Verschieben einer Nachricht die interne Mailbox-ID ändern. Deshalb verwendet der Trainer zusätzlich eine stabile Nachrichtenidentität auf Basis der RFC822-`Message-ID`; fehlt diese, wird ein SHA256-Wert der vollständigen Nachricht verwendet.
 
-Die Originalnachricht wird nur temporär exportiert und anschließend an `sa-learn --spam` oder `sa-learn --ham` übergeben. Dabei setzt der Trainer außerdem `--max-size` entsprechend der Konfiguration.
+Die Originalnachricht wird nur temporär exportiert und anschließend an `sa-learn --spam` oder `sa-learn --ham` übergeben. Dabei setzt der Trainer außerdem `--max-size` entsprechend der Konfiguration und verwendet das konfigurierte SpamAssassin-HOME.
+
+Der Befehl `doctor` zeigt das wirksame SpamAssassin-HOME, den Bayes-Pfad und die Zähler für Spam, Ham und Tokens an. Fehlen im konfigurierten HOME die Dateien `bayes_toks`, `bayes_seen` oder `bayes_journal`, wird eine Warnung ausgegeben.
 
 ## Produktiv validiert
 
