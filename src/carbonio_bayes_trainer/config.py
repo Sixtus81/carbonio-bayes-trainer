@@ -22,6 +22,7 @@ class AppConfig:
     dry_run: bool
     scan_interval_seconds: int
     sa_learn_path: str
+    spamassassin_home: Path | None
     zmmailbox_path: str
     mailbox_user: str
     accounts: tuple[str, ...]
@@ -75,6 +76,11 @@ def load_config(path: str | Path) -> AppConfig:
     max_message_size = int(
         trainer.get("max_message_size", _DEFAULT_MAX_MESSAGE_SIZE)
     )
+    home_value = trainer.get("home")
+    if home_value is not None and not isinstance(home_value, str):
+        raise ValueError("trainer.home must be a path string or null")
+    spamassassin_home = Path(home_value) if home_value else None
+
     if interval < 30:
         raise ValueError("scan_interval_seconds must be at least 30")
     if not 1 <= limit <= 1000:
@@ -95,6 +101,7 @@ def load_config(path: str | Path) -> AppConfig:
         sa_learn_path=str(
             trainer.get("sa_learn_path", "/opt/zextras/common/bin/sa-learn")
         ),
+        spamassassin_home=spamassassin_home,
         zmmailbox_path=str(carbonio.get("zmmailbox_path", "/opt/zextras/bin/zmmailbox")),
         mailbox_user=str(carbonio.get("run_as_user", "zextras")),
         accounts=accounts,
