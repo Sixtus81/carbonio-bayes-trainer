@@ -6,7 +6,9 @@ import re
 import shutil
 from collections.abc import Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
 from typing import TypeVar
 
 from .backend import MailboxMessage
@@ -214,6 +216,8 @@ def run_init(config_path: str) -> int:
 
 
 def run_scan(config_path: str) -> int:
+    started_at = datetime.now(timezone.utc)
+    started_counter = perf_counter()
     config = load_config(config_path)
     backend = _build_backend(config)
     accounts = _accounts(config, backend)
@@ -234,6 +238,7 @@ def run_scan(config_path: str) -> int:
 
     trainer = _build_trainer(config)
     with StateDatabase(config.database_path) as database:
+        events_before = database.training_event_counts()
         processor = MessageProcessor(
             backend=backend,
             database=database,
@@ -265,6 +270,22 @@ def run_scan(config_path: str) -> int:
                     failed += len(batch)
                     keys = ", ".join(message.message_key for message in batch)
                     LOGGER.exception("Failed to process batch containing: %s", keys)
+
+        events_after = database.training_event_counts()
+        finished_at = datetime.now(timezone.utc)
+        database.record_scan_run(
+            started_at=started_at.isoformat(),
+            finished_at=finished_at.isoformat(),
+            duration_seconds=perf_counter() - started_counter,
+            accounts=len(accounts),
+            messages=scanned,
+            successful=succeeded,
+            skipped=skipped,
+            failed=failed,
+            spam_trained=events_after["spam"] - events_before["spam"],
+            ham_trained=events_after["ham"] - events_before["ham"],
+            dry_run=False,
+        )
 
     print(
         f"Scan complete: {len(accounts)} account(s), {scanned} message(s), "
