@@ -16,6 +16,22 @@ class MessageState:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class ScanRun:
+    id: int
+    started_at: str
+    finished_at: str
+    duration_seconds: float
+    accounts: int
+    messages: int
+    successful: int
+    skipped: int
+    failed: int
+    spam_trained: int
+    ham_trained: int
+    dry_run: bool
+
+
 class StateDatabase:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -48,6 +64,21 @@ class StateDatabase:
                 success INTEGER NOT NULL,
                 details TEXT,
                 created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS scan_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TEXT NOT NULL,
+                finished_at TEXT NOT NULL,
+                duration_seconds REAL NOT NULL,
+                accounts INTEGER NOT NULL,
+                messages INTEGER NOT NULL,
+                successful INTEGER NOT NULL,
+                skipped INTEGER NOT NULL,
+                failed INTEGER NOT NULL,
+                spam_trained INTEGER NOT NULL,
+                ham_trained INTEGER NOT NULL,
+                dry_run INTEGER NOT NULL
             );
             """
         )
@@ -135,16 +166,68 @@ class StateDatabase:
         )
         self.connection.commit()
 
-    def stats(self) -> dict[str, int]:
+    def training_event_counts(self) -> dict[str, int]:
         rows = self.connection.execute(
-            "SELECT action, COUNT(*) AS count "
-            "FROM training_events "
-            "WHERE success = 1 "
-            "GROUP BY action"
+            "SELECT action, COUNT(*) AS count FROM training_events "
+            "WHERE success = 1 GROUP BY action"
         ).fetchall()
         result = {"spam": 0, "ham": 0}
         result.update({str(row["action"]): int(row["count"]) for row in rows})
         return result
+
+    def record_scan_run(
+        self,
+        *,
+        started_at: str,
+        finished_at: str,
+        duration_seconds: float,
+        accounts: int,
+        messages: int,
+        successful: int,
+        skipped: int,
+        failed: int,
+        spam_trained: int,
+        ham_trained: int,
+        dry_run: bool,
+    ) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO scan_runs(
+                started_at, finished_at, duration_seconds, accounts, messages,
+                successful, skipped, failed, spam_trained, ham_trained, dry_run
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                started_at,
+                finished_at,
+                duration_seconds,
+                accounts,
+                messages,
+                successful,
+                skipped,
+                failed,
+                spam_trained,
+                ham_trained,
+                int(dry_run),
+            ),
+        )
+        self.connection.commit()
+
+    def recent_scan_runs(self, limit: int = 10) -> tuple[ScanRun, ...]:
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        rows = self.connection.execute(
+            "SELECT id, started_at, finished_at, duration_seconds, accounts, messages, "
+            "successful, skipped, failed, spam_trained, ham_trained, dry_run "
+            "FROM scan_runs ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return tuple(
+            ScanRun(**{**dict(row), "dry_run": bool(row["dry_run"])}) for row in rows
+        )
+
+    def stats(self) -> dict[str, int]:
+        return self.training_event_counts()
 
     def close(self) -> None:
         self.connection.close()
