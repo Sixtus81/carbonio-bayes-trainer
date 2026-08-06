@@ -43,9 +43,9 @@ def _create_database(path: Path, *, with_scan_history: bool = True) -> None:
             created_at TEXT NOT NULL
         );
         INSERT INTO messages VALUES
-            ('a@example.test', '1', 'stable-1', '/Inbox', NULL, 'now'),
-            ('a@example.test', '2', NULL, '/Junk', 'spam', 'now'),
-            ('b@example.test', '3', 'stable-3', '/Inbox', 'ham', 'now');
+            ('a@example.test', '1', 'stable-1', '/Inbox', NULL, '2026-08-06T06:00:00Z'),
+            ('a@example.test', '2', NULL, '/Junk', 'spam', '2026-08-06T06:05:00Z'),
+            ('b@example.test', '3', 'stable-3', '/Inbox', 'ham', '2026-08-06T06:10:00Z');
         INSERT INTO training_events VALUES
             (1, 'a@example.test', '2', 'spam', 1, '', 'now'),
             (2, 'b@example.test', '3', 'ham', 1, '', 'now'),
@@ -97,7 +97,9 @@ def _config_file(tmp_path: Path, database: Path) -> Path:
     return config_file
 
 
-def test_collects_state_bayes_configuration_and_scan_statistics(tmp_path: Path) -> None:
+def test_collects_state_bayes_mailbox_configuration_and_scan_statistics(
+    tmp_path: Path,
+) -> None:
     database = tmp_path / "state.db"
     _create_database(database)
     statistics = StatisticsCollector(
@@ -116,6 +118,27 @@ def test_collects_state_bayes_configuration_and_scan_statistics(tmp_path: Path) 
     assert statistics.configuration.batch_size == 25
     assert statistics.configuration.mailbox_workers == 4
     assert statistics.configuration.export_workers == 3
+
+    assert len(statistics.mailboxes) == 2
+    first = statistics.mailboxes[0]
+    assert first.account == "a@example.test"
+    assert first.known_messages == 2
+    assert first.inbox_messages == 1
+    assert first.junk_messages == 1
+    assert first.stable_keys == 1
+    assert first.spam_events == 1
+    assert first.ham_events == 0
+    assert first.last_updated == "2026-08-06T06:05:00Z"
+
+    second = statistics.mailboxes[1]
+    assert second.account == "b@example.test"
+    assert second.known_messages == 1
+    assert second.inbox_messages == 1
+    assert second.junk_messages == 0
+    assert second.stable_keys == 1
+    assert second.spam_events == 0
+    assert second.ham_events == 1
+
     assert len(statistics.recent_scans) == 1
     assert statistics.recent_scans[0].messages == 7200
     assert statistics.recent_scans[0].spam_trained == 4
@@ -138,6 +161,11 @@ def test_formats_compact_statistics_output(tmp_path: Path) -> None:
     assert "Spam learned:    11391" in output
     assert "Ham learned:     94924" in output
     assert "Known tokens:    169712" in output
+    assert "Mailbox statistics" in output
+    assert "a@example.test" in output
+    assert "Known: 2 | Inbox: 1 | Junk: 1 | Stable: 1" in output
+    assert "Spam events: 1 | Ham events: 0" in output
+    assert "b@example.test" in output
     assert "Recent scans" in output
     assert "7200 messages | spam +4 | ham +1 | failed 1 | 90.5s" in output
     assert "SA HOME:         /opt/zextras/data/amavisd" in output
@@ -152,5 +180,6 @@ def test_old_database_without_scan_history_is_supported(tmp_path: Path) -> None:
         trainer=FakeTrainer(),  # type: ignore[arg-type]
     ).collect()
 
+    assert len(statistics.mailboxes) == 2
     assert statistics.recent_scans == ()
     assert "No scan history recorded yet." in format_statistics(statistics)
