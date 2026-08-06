@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from carbonio_bayes_trainer.health import HealthEvaluator, HealthStatus
+from carbonio_bayes_trainer.health_format import format_health
 from carbonio_bayes_trainer.stats import (
     BayesStatistics,
     ConfigurationStatistics,
@@ -25,7 +26,7 @@ def _statistics(
     bayes_spam: int = 11500,
     include_scan: bool = True,
 ) -> Statistics:
-    scans = ()
+    scans: tuple[ScanRunStatistics, ...] = ()
     if include_scan:
         scans = (
             ScanRunStatistics(
@@ -80,6 +81,12 @@ def test_healthy_production_statistics_receive_five_stars() -> None:
         "Training activity",
     ]
 
+    output = format_health(report)
+    assert "★★★★★" in output
+    assert "Overall: Info" in output
+    assert "[OK  ] Scan freshness" in output
+    assert "No action required." in output
+
 
 def test_stale_scan_is_critical_and_recommends_timer_check() -> None:
     report = HealthEvaluator().evaluate(
@@ -89,7 +96,9 @@ def test_stale_scan_is_critical_and_recommends_timer_check() -> None:
 
     assert report.overall is HealthStatus.CRITICAL
     assert report.stars < 5
-    assert report.recommendation == "Check the Carbonio Bayes Trainer service and timer."
+    assert report.recommendation == (
+        "Check the Carbonio Bayes Trainer service and timer."
+    )
 
 
 def test_failed_messages_are_reported_as_warning() -> None:
@@ -98,7 +107,9 @@ def test_failed_messages_are_reported_as_warning() -> None:
         now=datetime(2026, 8, 6, 10, 0, tzinfo=timezone.utc),
     )
 
-    failed_check = next(check for check in report.checks if check.name == "Failed messages")
+    failed_check = next(
+        check for check in report.checks if check.name == "Failed messages"
+    )
     assert failed_check.status is HealthStatus.WARNING
     assert "3 failed" in failed_check.summary
 
@@ -120,4 +131,6 @@ def test_missing_scan_history_is_critical() -> None:
     )
 
     assert report.overall is HealthStatus.CRITICAL
-    assert report.recommendation == "Run a productive scan and verify the systemd timer."
+    assert report.recommendation == (
+        "Run a productive scan and verify the systemd timer."
+    )
