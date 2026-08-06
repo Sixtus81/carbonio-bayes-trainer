@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
+from typing import TYPE_CHECKING
 
-from .stats import Statistics
+if TYPE_CHECKING:
+    from .stats import Statistics
 
 
 class HealthStatus(str, Enum):
@@ -51,14 +53,11 @@ class HealthEvaluator:
             self._stable_coverage(statistics),
             self._training_activity(statistics),
         )
-        overall = self._overall_status(checks)
-        stars = self._stars(checks)
-        recommendation = self._recommendation(checks)
         return HealthReport(
-            overall=overall,
-            stars=stars,
+            overall=self._overall_status(checks),
+            stars=self._stars(checks),
             checks=checks,
-            recommendation=recommendation,
+            recommendation=self._recommendation(checks),
         )
 
     def _scan_freshness(self, statistics: Statistics, now: datetime) -> HealthCheck:
@@ -74,8 +73,7 @@ class HealthEvaluator:
         started_at = datetime.fromisoformat(statistics.recent_scans[0].started_at)
         if started_at.tzinfo is None:
             started_at = started_at.replace(tzinfo=timezone.utc)
-        age_seconds = max(0.0, (now - started_at).total_seconds())
-        age_minutes = age_seconds / 60
+        age_minutes = max(0.0, (now - started_at).total_seconds()) / 60
 
         if age_minutes < 20:
             return HealthCheck(
