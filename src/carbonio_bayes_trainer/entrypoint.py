@@ -8,6 +8,7 @@ from .bootstrap import HamBootstrapper, MailFolder
 from .cli import main as legacy_main
 from .config import load_config
 from .spamassassin import SpamAssassinTrainer
+from .stats_command import run_stats
 
 
 def _bootstrap_parser() -> argparse.ArgumentParser:
@@ -89,32 +90,40 @@ def run_bootstrap(argv: list[str]) -> int:
     return 1 if result.failed else 0
 
 
-def main() -> None:
-    argv = sys.argv[1:]
-    if "bootstrap-ham" not in argv:
-        legacy_main()
-        return
-
-    command_index = argv.index("bootstrap-ham")
-    global_args = argv[:command_index]
-    command_args = argv[command_index + 1 :]
-
-    # Accept the existing global options before the subcommand.
+def _forward_global_args(arguments: list[str]) -> list[str]:
     forwarded: list[str] = []
     index = 0
-    while index < len(global_args):
-        argument = global_args[index]
-        if argument == "--config" and index + 1 < len(global_args):
-            forwarded.extend((argument, global_args[index + 1]))
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "--config" and index + 1 < len(arguments):
+            forwarded.extend((argument, arguments[index + 1]))
             index += 2
             continue
         if argument == "--verbose":
             forwarded.append(argument)
             index += 1
             continue
-        raise SystemExit(f"Unknown global argument before bootstrap-ham: {argument}")
+        raise SystemExit(f"Unknown global argument before command: {argument}")
+    return forwarded
 
-    raise SystemExit(run_bootstrap([*forwarded, *command_args]))
+
+def main() -> None:
+    argv = sys.argv[1:]
+    commands = [command for command in ("bootstrap-ham", "stats") if command in argv]
+    if not commands:
+        legacy_main()
+        return
+    if len(commands) > 1:
+        raise SystemExit("Only one command may be specified")
+
+    command = commands[0]
+    command_index = argv.index(command)
+    forwarded = _forward_global_args(argv[:command_index])
+    command_args = argv[command_index + 1 :]
+
+    if command == "bootstrap-ham":
+        raise SystemExit(run_bootstrap([*forwarded, *command_args]))
+    raise SystemExit(run_stats([*forwarded, *command_args]))
 
 
 if __name__ == "__main__":
