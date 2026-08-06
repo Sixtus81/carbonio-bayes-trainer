@@ -29,6 +29,18 @@ class StateStatistics:
 
 
 @dataclass(frozen=True)
+class MailboxStatistics:
+    account: str
+    known_messages: int
+    inbox_messages: int
+    junk_messages: int
+    stable_keys: int
+    spam_events: int
+    ham_events: int
+    last_updated: str
+
+
+@dataclass(frozen=True)
 class ScanRunStatistics:
     started_at: str
     duration_seconds: float
@@ -56,6 +68,7 @@ class Statistics:
     version: str
     state: StateStatistics
     bayes: BayesStatistics
+    mailboxes: tuple[MailboxStatistics, ...]
     recent_scans: tuple[ScanRunStatistics, ...]
     configuration: ConfigurationStatistics
 
@@ -77,11 +90,16 @@ class StatisticsCollector:
         )
 
     def collect(self) -> Statistics:
-        state, recent_scans = _database_statistics(self.config.database_path)
+        state, mailboxes, recent_scans = _database_statistics(
+            self.config.database_path,
+            inbox_folder=self.config.inbox_folder,
+            junk_folder=self.config.junk_folder,
+        )
         return Statistics(
             version=_package_version(),
             state=state,
             bayes=_bayes_statistics(self.trainer),
+            mailboxes=mailboxes,
             recent_scans=recent_scans,
             configuration=ConfigurationStatistics(
                 database_path=self.config.database_path,
@@ -101,7 +119,16 @@ def _package_version() -> str:
         return "development"
 
 
-def _database_statistics(path: Path) -> tuple[StateStatistics, tuple[ScanRunStatistics, ...]]:
+def _database_statistics(
+    path: Path,
+    *,
+    inbox_folder: str,
+    junk_folder: str,
+) -> tuple[
+    StateStatistics,
+    tuple[MailboxStatistics, ...],
+    tuple[ScanRunStatistics, ...],
+]:
     if not path.is_file():
         raise RuntimeError(f"State database does not exist: {path}")
 
@@ -113,6 +140,18 @@ def _database_statistics(path: Path) -> tuple[StateStatistics, tuple[ScanRunStat
         event_rows = connection.execute(
             "SELECT action, COUNT(*) FROM training_events "
             "WHERE success = 1 GROUP BY action"
+        ).fetchall()
+        mailbox_rows = connection.execute(
+            "SELECT account, COUNT(*), "
+            "SUM(CASE WHEN folder = ? THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN folder = ? THEN 1 ELSE 0 END), "
+            "COUNT(stable_key), MAX(updated_at) "
+            "FROM messages GROUP BY account ORDER BY COUNT(*) DESC, account",
+            (inbox_folder, junk_folder),
+        ).fetchall()
+        mailbox_event_rows = connection.execute(
+            "SELECT account, action, COUNT(*) FROM training_events "
+            "WHERE success = 1 GROUP BY account, action"
         ).fetchall()
         table_exists = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scan_runs'"
@@ -141,6 +180,24 @@ def _database_statistics(path: Path) -> tuple[StateStatistics, tuple[ScanRunStat
         spam_events=events.get("spam", 0),
         ham_events=events.get("ham", 0),
     )
+
+    mailbox_events: dict[str, dict[str, int]] = {}
+    for account, action, count in mailbox_event_rows:
+        mailbox_events.setdefault(str(account), {})[str(action)] = int(count)
+
+    mailboxes = tuple(
+        MailboxStatistics(
+            account=str(row[0]),
+            known_messages=int(row[1]),
+            inbox_messages=int(row[2]),
+            junk_messages=int(row[3]),
+            stable_keys=int(row[4]),
+            spam_events=mailbox_events.get(str(row[0]), {}).get("spam", 0),
+            ham_events=mailbox_events.get(str(row[0]), {}).get("ham", 0),
+            last_updated=str(row[5]),
+        )
+        for row in mailbox_rows
+    )
     recent_scans = tuple(
         ScanRunStatistics(
             started_at=str(row[0]),
@@ -155,7 +212,7 @@ def _database_statistics(path: Path) -> tuple[StateStatistics, tuple[ScanRunStat
         )
         for row in scan_rows
     )
-    return state, recent_scans
+    return state, mailboxes, recent_scans
 
 
 def _bayes_statistics(trainer: SpamAssassinTrainer) -> BayesStatistics:
@@ -211,9 +268,24 @@ def format_statistics(statistics: Statistics) -> str:
         f"Ham learned:     {statistics.bayes.ham}",
         f"Known tokens:    {statistics.bayes.tokens}",
         "",
-        "Recent scans",
-        "------------",
+        "Mailbox statistics",
+        "------------------",
     ]
+    if statistics.mailboxes:
+        for mailbox in statistics.mailboxes:
+            lines.extend(
+                (
+                    mailbox.account,
+                    f"  Known: {mailbox.known_messages} | Inbox: {mailbox.inbox_messages} | "
+                    f"Junk: {mailbox.junk_messages} | Stable: {mailbox.stable_keys}",
+                    f"  Spam events: {mailbox.spam_events} | Ham events: {mailbox.ham_events} | "
+                    f"Last update: {mailbox.last_updated}",
+                )
+            )
+    else:
+        lines.append("No mailbox state recorded yet.")
+
+    lines.extend(("", "Recent scans", "------------"))
     if statistics.recent_scans:
         for run in statistics.recent_scans:
             lines.append(
