@@ -29,6 +29,19 @@ class StateStatistics:
 
 
 @dataclass(frozen=True)
+class ScanRunStatistics:
+    started_at: str
+    duration_seconds: float
+    accounts: int
+    messages: int
+    successful: int
+    skipped: int
+    failed: int
+    spam_trained: int
+    ham_trained: int
+
+
+@dataclass(frozen=True)
 class ConfigurationStatistics:
     database_path: Path
     spamassassin_home: Path | None
@@ -43,6 +56,7 @@ class Statistics:
     version: str
     state: StateStatistics
     bayes: BayesStatistics
+    recent_scans: tuple[ScanRunStatistics, ...]
     configuration: ConfigurationStatistics
 
 
@@ -63,10 +77,12 @@ class StatisticsCollector:
         )
 
     def collect(self) -> Statistics:
+        state, recent_scans = _database_statistics(self.config.database_path)
         return Statistics(
             version=_package_version(),
-            state=_state_statistics(self.config.database_path),
+            state=state,
             bayes=_bayes_statistics(self.trainer),
+            recent_scans=recent_scans,
             configuration=ConfigurationStatistics(
                 database_path=self.config.database_path,
                 spamassassin_home=self.config.spamassassin_home,
@@ -85,7 +101,7 @@ def _package_version() -> str:
         return "development"
 
 
-def _state_statistics(path: Path) -> StateStatistics:
+def _database_statistics(path: Path) -> tuple[StateStatistics, tuple[ScanRunStatistics, ...]]:
     if not path.is_file():
         raise RuntimeError(f"State database does not exist: {path}")
 
@@ -98,6 +114,18 @@ def _state_statistics(path: Path) -> StateStatistics:
             "SELECT action, COUNT(*) FROM training_events "
             "WHERE success = 1 GROUP BY action"
         ).fetchall()
+        table_exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scan_runs'"
+        ).fetchone()
+        scan_rows = (
+            connection.execute(
+                "SELECT started_at, duration_seconds, accounts, messages, successful, "
+                "skipped, failed, spam_trained, ham_trained "
+                "FROM scan_runs WHERE dry_run = 0 ORDER BY id DESC LIMIT 5"
+            ).fetchall()
+            if table_exists
+            else []
+        )
     except sqlite3.Error as exc:
         raise RuntimeError(f"Unable to read state database {path}: {exc}") from exc
     finally:
@@ -106,13 +134,28 @@ def _state_statistics(path: Path) -> StateStatistics:
     events = {str(action): int(count) for action, count in event_rows}
     known = int(known_messages)
     stable = int(stable_keys)
-    return StateStatistics(
+    state = StateStatistics(
         known_messages=known,
         stable_keys=stable,
         legacy_keys=known - stable,
         spam_events=events.get("spam", 0),
         ham_events=events.get("ham", 0),
     )
+    recent_scans = tuple(
+        ScanRunStatistics(
+            started_at=str(row[0]),
+            duration_seconds=float(row[1]),
+            accounts=int(row[2]),
+            messages=int(row[3]),
+            successful=int(row[4]),
+            skipped=int(row[5]),
+            failed=int(row[6]),
+            spam_trained=int(row[7]),
+            ham_trained=int(row[8]),
+        )
+        for row in scan_rows
+    )
+    return state, recent_scans
 
 
 def _bayes_statistics(trainer: SpamAssassinTrainer) -> BayesStatistics:
@@ -126,12 +169,7 @@ def _bayes_statistics(trainer: SpamAssassinTrainer) -> BayesStatistics:
         if match:
             values[match.group(2).strip()] = int(match.group(1))
 
-    required = {
-        "nspam": "spam",
-        "nham": "ham",
-        "ntokens": "tokens",
-    }
-    missing = [source for source in required if source not in values]
+    missing = [name for name in ("nspam", "nham", "ntokens") if name not in values]
     if missing:
         raise RuntimeError(
             "SpamAssassin Bayes statistics are incomplete; missing " + ", ".join(missing)
@@ -152,28 +190,42 @@ def format_statistics(statistics: Statistics) -> str:
         else _format_bytes(config.max_message_size)
     )
     home = str(config.spamassassin_home) if config.spamassassin_home else "not configured"
+    lines = [
+        "Carbonio Bayes Trainer Statistics",
+        "",
+        "Version",
+        "-------",
+        statistics.version,
+        "",
+        "State database",
+        "--------------",
+        f"Known messages:  {statistics.state.known_messages}",
+        f"Stable keys:     {statistics.state.stable_keys}",
+        f"Legacy keys:     {statistics.state.legacy_keys}",
+        f"Spam events:     {statistics.state.spam_events}",
+        f"Ham events:      {statistics.state.ham_events}",
+        "",
+        "Bayes database",
+        "--------------",
+        f"Spam learned:    {statistics.bayes.spam}",
+        f"Ham learned:     {statistics.bayes.ham}",
+        f"Known tokens:    {statistics.bayes.tokens}",
+        "",
+        "Recent scans",
+        "------------",
+    ]
+    if statistics.recent_scans:
+        for run in statistics.recent_scans:
+            lines.append(
+                f"{run.started_at} | {run.messages} messages | "
+                f"spam +{run.spam_trained} | ham +{run.ham_trained} | "
+                f"failed {run.failed} | {run.duration_seconds:.1f}s"
+            )
+    else:
+        lines.append("No scan history recorded yet.")
 
-    return "\n".join(
+    lines.extend(
         (
-            "Carbonio Bayes Trainer Statistics",
-            "",
-            "Version",
-            "-------",
-            statistics.version,
-            "",
-            "State database",
-            "--------------",
-            f"Known messages:  {statistics.state.known_messages}",
-            f"Stable keys:     {statistics.state.stable_keys}",
-            f"Legacy keys:     {statistics.state.legacy_keys}",
-            f"Spam events:     {statistics.state.spam_events}",
-            f"Ham events:      {statistics.state.ham_events}",
-            "",
-            "Bayes database",
-            "--------------",
-            f"Spam learned:    {statistics.bayes.spam}",
-            f"Ham learned:     {statistics.bayes.ham}",
-            f"Known tokens:    {statistics.bayes.tokens}",
             "",
             "Configuration",
             "-------------",
@@ -185,6 +237,7 @@ def format_statistics(statistics: Statistics) -> str:
             f"Maximum size:    {maximum_size}",
         )
     )
+    return "\n".join(lines)
 
 
 def _format_bytes(value: int) -> str:
