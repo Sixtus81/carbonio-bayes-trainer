@@ -7,6 +7,7 @@ import sys
 from .bootstrap import HamBootstrapper, MailFolder
 from .cli import main as legacy_main
 from .config import load_config
+from .scan_lock import ScanAlreadyRunning, ScanLock
 from .spamassassin import SpamAssassinTrainer
 from .stats_command import run_stats
 
@@ -107,11 +108,36 @@ def _forward_global_args(arguments: list[str]) -> list[str]:
     return forwarded
 
 
+def _config_path(arguments: list[str]) -> str:
+    try:
+        index = arguments.index("--config")
+    except ValueError:
+        return "/etc/carbonio-bayes-trainer.yaml"
+    if index + 1 >= len(arguments):
+        raise SystemExit("--config requires a path")
+    return arguments[index + 1]
+
+
+def _run_legacy_with_scan_lock(argv: list[str]) -> None:
+    if "scan" not in argv:
+        legacy_main()
+        return
+
+    config = load_config(_config_path(argv))
+    lock_path = config.database_path.with_name(f"{config.database_path.name}.scan.lock")
+    try:
+        with ScanLock(lock_path):
+            legacy_main()
+    except ScanAlreadyRunning as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(75) from exc
+
+
 def main() -> None:
     argv = sys.argv[1:]
     commands = [command for command in ("bootstrap-ham", "stats") if command in argv]
     if not commands:
-        legacy_main()
+        _run_legacy_with_scan_lock(argv)
         return
     if len(commands) > 1:
         raise SystemExit("Only one command may be specified")
