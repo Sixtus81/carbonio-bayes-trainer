@@ -110,6 +110,27 @@ systemctl daemon-reload
 systemctl enable --now carbonio-bayes-trainer.timer
 ```
 
+Der mitgelieferte Timer verwendet standardmäßig einen festen 15-Minuten-Rhythmus über `OnCalendar=*:0/15`. Dieses Intervall ist für Installationen mit bis zu ungefähr 50 Postfächern in der Regel ausreichend, sofern die überwachten Inbox-/Junk-Ordner einigermaßen gepflegt sind und ein vollständiger Scan deutlich innerhalb des Intervalls abgeschlossen wird.
+
+Bei größeren Installationen, sehr großen Ordnern oder längeren Scan-Laufzeiten sollte das Timer-Intervall an die tatsächliche Umgebung angepasst werden. Als Faustregel sollte zwischen zwei geplanten Starts genügend Reserve für die längeren beobachteten Scans verbleiben. Ein kürzeres Intervall beschleunigt das Bayes-Training nur begrenzt, kann aber unnötige Überschneidungen verursachen, wenn ein vorheriger Lauf noch aktiv ist.
+
+Die reale Scan-Dauer kann mit `carbonio-bayes-trainer stats` unter `Recent scans` kontrolliert werden. Der Health-Check `Scan freshness` hilft zusätzlich dabei zu erkennen, wenn geplante Läufe nicht mehr regelmäßig stattfinden.
+
+Beispiel für eine Anpassung auf 30 Minuten:
+
+```ini
+[Timer]
+OnCalendar=*:0/30
+```
+
+Nach einer Änderung der Timer-Datei:
+
+```bash
+systemctl daemon-reload
+systemctl restart carbonio-bayes-trainer.timer
+systemctl list-timers carbonio-bayes-trainer.timer
+```
+
 Der Dienst erlaubt Schreibzugriffe auf die eigene SQLite-Datenbank und auf die produktive SpamAssassin-Bayes-Datenbank unter `/opt/zextras/data/amavisd/.spamassassin`. Diese Freigabe wird unter anderem für `bayes.mutex`, `bayes_seen`, `bayes_toks` und `bayes_journal` benötigt.
 
 Status und Protokoll:
