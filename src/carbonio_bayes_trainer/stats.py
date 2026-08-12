@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -239,6 +240,18 @@ def _bayes_statistics(trainer: SpamAssassinTrainer) -> BayesStatistics:
     )
 
 
+def _format_local_timestamp(value: str) -> str:
+    """Format a stored ISO timestamp in the server's local timezone."""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    if parsed.tzinfo is None:
+        return value
+    local = parsed.astimezone()
+    return local.strftime("%Y-%m-%d %H:%M:%S %Z")
+
+
 def format_statistics(statistics: Statistics) -> str:
     config = statistics.configuration
     maximum_size = (
@@ -279,7 +292,7 @@ def format_statistics(statistics: Statistics) -> str:
                     f"  Known: {mailbox.known_messages} | Inbox: {mailbox.inbox_messages} | "
                     f"Junk: {mailbox.junk_messages} | Stable: {mailbox.stable_keys}",
                     f"  Spam events: {mailbox.spam_events} | Ham events: {mailbox.ham_events} | "
-                    f"Last update: {mailbox.last_updated}",
+                    f"Last update: {_format_local_timestamp(mailbox.last_updated)}",
                 )
             )
     else:
@@ -289,7 +302,7 @@ def format_statistics(statistics: Statistics) -> str:
     if statistics.recent_scans:
         for run in statistics.recent_scans:
             lines.append(
-                f"{run.started_at} | {run.messages} messages | "
+                f"{_format_local_timestamp(run.started_at)} | {run.messages} messages | "
                 f"spam +{run.spam_trained} | ham +{run.ham_trained} | "
                 f"failed {run.failed} | {run.duration_seconds:.1f}s"
             )
