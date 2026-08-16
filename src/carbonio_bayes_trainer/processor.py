@@ -68,9 +68,10 @@ class MessageProcessor:
         self, message: MailboxMessage, previous: MessageState | None
     ) -> tuple[MessageState | None, str | None]:
         stable_key = previous.stable_key if previous else None
-        needs_identity = previous is None or (
-            previous.stable_key is None and previous.trained_as == "spam"
-        )
+        # Every currently observed legacy row is safe to backfill.  Earlier
+        # versions limited this lookup to spam-trained rows, which left old
+        # Inbox observations permanently without a stable identity.
+        needs_identity = previous is None or previous.stable_key is None
         if not needs_identity:
             return previous, stable_key
 

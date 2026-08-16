@@ -155,6 +155,56 @@ def test_spam_returned_to_inbox_with_changed_internal_id_is_ham(tmp_path: Path) 
     assert state.trained_as == "ham"
 
 
+def test_observed_legacy_inbox_message_gets_stable_key_without_training(tmp_path: Path) -> None:
+    backend = FailingIdentityBackend()
+    trainer = FakeTrainer()
+    message = MailboxMessage("user@example.com", "legacy-inbox", "/Inbox")
+
+    with StateDatabase(tmp_path / "state.db") as database:
+        database.upsert("user@example.com", "legacy-inbox", "/Inbox", None)
+        processor = MessageProcessor(
+            backend,
+            database,
+            trainer,
+            "/Inbox",
+            "/Junk",
+        )
+
+        result = processor.process_batch((message,))
+        state = database.get("user@example.com", "legacy-inbox")
+
+    assert result == BatchResult(successful=1)
+    assert trainer.actions == []
+    assert state is not None
+    assert state.stable_key == "message-id:<legacy-inbox@example.com>"
+    assert state.trained_as is None
+
+
+def test_observed_legacy_junk_message_preserves_spam_state(tmp_path: Path) -> None:
+    backend = FailingIdentityBackend()
+    trainer = FakeTrainer()
+    message = MailboxMessage("user@example.com", "legacy-junk", "/Junk")
+
+    with StateDatabase(tmp_path / "state.db") as database:
+        database.upsert("user@example.com", "legacy-junk", "/Junk", "spam")
+        processor = MessageProcessor(
+            backend,
+            database,
+            trainer,
+            "/Inbox",
+            "/Junk",
+        )
+
+        result = processor.process_batch((message,))
+        state = database.get("user@example.com", "legacy-junk")
+
+    assert result == BatchResult(successful=1)
+    assert trainer.actions == []
+    assert state is not None
+    assert state.stable_key == "message-id:<legacy-junk@example.com>"
+    assert state.trained_as == "spam"
+
+
 def test_failed_training_batch_is_retried_individually(tmp_path: Path) -> None:
     backend = FakeBackend()
     trainer = IsolatingTrainer()
