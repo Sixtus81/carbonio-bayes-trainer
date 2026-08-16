@@ -34,7 +34,7 @@ def _database(path: Path) -> StateDatabase:
 
 def test_dry_run_only_counts_legacy_rows(tmp_path: Path) -> None:
     with _database(tmp_path / "state.db") as database:
-        result = StableKeyMigrator(FakeBackend(), database).run(dry_run=True)  # type: ignore[arg-type]
+        result = StableKeyMigrator(FakeBackend(), database).run(dry_run=True)
 
         assert result.total == 4
         assert result.migrated == 0
@@ -45,20 +45,24 @@ def test_dry_run_only_counts_legacy_rows(tmp_path: Path) -> None:
 
 def test_migration_backfills_stable_keys_without_training(tmp_path: Path) -> None:
     with _database(tmp_path / "state.db") as database:
-        result = StableKeyMigrator(FakeBackend(), database).run()  # type: ignore[arg-type]
+        result = StableKeyMigrator(FakeBackend(), database).run()
 
+        state_one = database.get("a@example.test", "1")
+        state_two = database.get("a@example.test", "2")
+        assert state_one is not None
+        assert state_two is not None
         assert result.total == 4
         assert result.migrated == 2
         assert result.skipped == 1
         assert result.failed == 1
-        assert database.get("a@example.test", "1").stable_key == "message-id:<1@example.test>"  # type: ignore[union-attr]
-        assert database.get("a@example.test", "2").stable_key == "message-id:<2@example.test>"  # type: ignore[union-attr]
+        assert state_one.stable_key == "message-id:<1@example.test>"
+        assert state_two.stable_key == "message-id:<2@example.test>"
         assert len(database.legacy_messages()) == 2
 
 
 def test_limit_restricts_number_of_legacy_rows(tmp_path: Path) -> None:
     with _database(tmp_path / "state.db") as database:
-        result = StableKeyMigrator(FakeBackend(), database).run(limit=1)  # type: ignore[arg-type]
+        result = StableKeyMigrator(FakeBackend(), database).run(limit=1)
 
         assert result.total == 1
         assert result.migrated == 1
