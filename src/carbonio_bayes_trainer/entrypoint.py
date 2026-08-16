@@ -6,6 +6,7 @@ import sys
 
 from .bootstrap import HamBootstrapper, MailFolder
 from .carbonio_backend import CarbonioBackend
+from .cleanup_legacy import LegacyStateCleaner
 from .cli import main as legacy_main
 from .config import load_config
 from .database import StateDatabase
@@ -42,6 +43,21 @@ def _migration_parser() -> argparse.ArgumentParser:
         help="Count legacy rows without exporting or changing messages",
     )
     parser.add_argument("--limit", type=int, help="Maximum number of legacy rows to process")
+    parser.add_argument("--verbose", action="store_true")
+    return parser
+
+
+def _cleanup_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="carbonio-bayes-trainer cleanup-legacy",
+        description="Remove legacy message-state rows that have no stable key.",
+    )
+    parser.add_argument("--config", default="/etc/carbonio-bayes-trainer.yaml")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Count legacy rows without deleting anything",
+    )
     parser.add_argument("--verbose", action="store_true")
     return parser
 
@@ -140,6 +156,34 @@ def run_migration(argv: list[str]) -> int:
     return 1 if result.failed else 0
 
 
+def run_cleanup(argv: list[str]) -> int:
+    args = _cleanup_parser().parse_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    config = load_config(args.config)
+    lock_path = config.database_path.with_name(f"{config.database_path.name}.scan.lock")
+
+    try:
+        with ScanLock(lock_path):
+            with StateDatabase(config.database_path) as database:
+                result = LegacyStateCleaner(database).run(dry_run=args.dry_run)
+    except ScanAlreadyRunning as exc:
+        print(str(exc), file=sys.stderr)
+        return 75
+
+    print("Legacy state cleanup complete")
+    print(f"Legacy rows found:   {result.found}")
+    print(f"Legacy rows deleted: {result.deleted}")
+    if args.dry_run:
+        print("Dry-run only: no database rows were changed.")
+    else:
+        print("SpamAssassin Bayes data and training history were not changed.")
+        print("Messages still present in Carbonio will be rediscovered on normal scans.")
+    return 0
+
+
 def _forward_global_args(arguments: list[str]) -> list[str]:
     forwarded: list[str] = []
     index = 0
@@ -184,7 +228,12 @@ def _run_legacy_with_scan_lock(argv: list[str]) -> None:
 
 def main() -> None:
     argv = sys.argv[1:]
-    known_commands = ("bootstrap-ham", "migrate-stable-keys", "stats")
+    known_commands = (
+        "bootstrap-ham",
+        "cleanup-legacy",
+        "migrate-stable-keys",
+        "stats",
+    )
     commands = [command for command in known_commands if command in argv]
     if not commands:
         _run_legacy_with_scan_lock(argv)
@@ -199,6 +248,8 @@ def main() -> None:
 
     if command == "bootstrap-ham":
         raise SystemExit(run_bootstrap([*forwarded, *command_args]))
+    if command == "cleanup-legacy":
+        raise SystemExit(run_cleanup([*forwarded, *command_args]))
     if command == "migrate-stable-keys":
         raise SystemExit(run_migration([*forwarded, *command_args]))
     raise SystemExit(run_stats([*forwarded, *command_args]))
