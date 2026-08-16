@@ -5,8 +5,11 @@ import logging
 import sys
 
 from .bootstrap import HamBootstrapper, MailFolder
+from .carbonio_backend import CarbonioBackend
 from .cli import main as legacy_main
 from .config import load_config
+from .database import StateDatabase
+from .migrate_stable_keys import StableKeyMigrator
 from .scan_lock import ScanAlreadyRunning, ScanLock
 from .spamassassin import SpamAssassinTrainer
 from .stats_command import run_stats
@@ -23,6 +26,22 @@ def _bootstrap_parser() -> argparse.ArgumentParser:
     parser.add_argument("--recursive", action="store_true", help="Include subfolders")
     parser.add_argument("--dry-run", action="store_true", help="Export and count without training")
     parser.add_argument("--limit", type=int, help="Maximum number of messages to process")
+    parser.add_argument("--verbose", action="store_true")
+    return parser
+
+
+def _migration_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="carbonio-bayes-trainer migrate-stable-keys",
+        description="Backfill stable message identities without SpamAssassin training.",
+    )
+    parser.add_argument("--config", default="/etc/carbonio-bayes-trainer.yaml")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Count legacy rows without exporting or changing messages",
+    )
+    parser.add_argument("--limit", type=int, help="Maximum number of legacy rows to process")
     parser.add_argument("--verbose", action="store_true")
     return parser
 
@@ -91,6 +110,36 @@ def run_bootstrap(argv: list[str]) -> int:
     return 1 if result.failed else 0
 
 
+def run_migration(argv: list[str]) -> int:
+    args = _migration_parser().parse_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    config = load_config(args.config)
+    backend = CarbonioBackend(
+        zmmailbox_path=config.zmmailbox_path,
+        max_messages_per_folder=config.max_messages_per_folder,
+    )
+
+    with StateDatabase(config.database_path) as database:
+        result = StableKeyMigrator(backend, database).run(
+            dry_run=args.dry_run,
+            limit=args.limit,
+        )
+
+    print("Stable-key migration complete")
+    print(f"Legacy rows: {result.total}")
+    print(f"Migrated:    {result.migrated}")
+    print(f"Skipped:     {result.skipped}")
+    print(f"Failed:      {result.failed}")
+    if args.dry_run:
+        print("Dry-run only: no messages were exported and no database rows were changed.")
+    else:
+        print("No SpamAssassin training was performed.")
+    return 1 if result.failed else 0
+
+
 def _forward_global_args(arguments: list[str]) -> list[str]:
     forwarded: list[str] = []
     index = 0
@@ -135,7 +184,8 @@ def _run_legacy_with_scan_lock(argv: list[str]) -> None:
 
 def main() -> None:
     argv = sys.argv[1:]
-    commands = [command for command in ("bootstrap-ham", "stats") if command in argv]
+    known_commands = ("bootstrap-ham", "migrate-stable-keys", "stats")
+    commands = [command for command in known_commands if command in argv]
     if not commands:
         _run_legacy_with_scan_lock(argv)
         return
@@ -149,6 +199,8 @@ def main() -> None:
 
     if command == "bootstrap-ham":
         raise SystemExit(run_bootstrap([*forwarded, *command_args]))
+    if command == "migrate-stable-keys":
+        raise SystemExit(run_migration([*forwarded, *command_args]))
     raise SystemExit(run_stats([*forwarded, *command_args]))
 
 
