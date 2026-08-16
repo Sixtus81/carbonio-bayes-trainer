@@ -152,6 +152,7 @@ class HealthEvaluator:
     def _stable_coverage(self, statistics: Statistics) -> HealthCheck:
         known = statistics.state.known_messages
         stable = statistics.state.stable_keys
+        legacy = statistics.state.legacy_keys
         if known == 0:
             return HealthCheck(
                 name="Stable-key coverage",
@@ -169,19 +170,19 @@ class HealthEvaluator:
             description = "Good coverage."
         elif coverage >= 50:
             status = HealthStatus.INFO
-            description = "Coverage is improving."
+            description = "Coverage is improving as new messages receive stable keys."
         else:
             status = HealthStatus.WARNING
             description = "A large legacy message population remains."
 
         recommendation = None
         if status is HealthStatus.WARNING:
-            recommendation = "Allow normal scans to migrate legacy message identities."
+            recommendation = "Run migrate-stable-keys to backfill legacy message identities."
         return HealthCheck(
             name="Stable-key coverage",
             status=status,
             summary=f"{stable} of {known} messages ({coverage:.1f}%).",
-            details=f"{description} Legacy entries migrate during normal processing.",
+            details=f"{description} {legacy} legacy entries remain.",
             recommendation=recommendation,
         )
 
