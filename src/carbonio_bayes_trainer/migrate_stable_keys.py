@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from .backend import MailboxMessage, MailboxMessageUnavailable
-from .carbonio_backend import CarbonioBackend
 from .database import StateDatabase
+
+
+class StableIdentityBackend(Protocol):
+    def stable_message_key(self, message: MailboxMessage) -> str:
+        """Return a stable identity for one mailbox message."""
 
 
 @dataclass(frozen=True)
@@ -18,7 +23,7 @@ class MigrationResult:
 class StableKeyMigrator:
     """Backfill stable identities for legacy state rows without retraining Bayes."""
 
-    def __init__(self, backend: CarbonioBackend, database: StateDatabase) -> None:
+    def __init__(self, backend: StableIdentityBackend, database: StateDatabase) -> None:
         self.backend = backend
         self.database = database
 
