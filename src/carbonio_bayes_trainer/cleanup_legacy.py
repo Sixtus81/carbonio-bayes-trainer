@@ -18,9 +18,12 @@ class LegacyStateCleaner:
         self.database = database
 
     def run(self, *, dry_run: bool = False) -> LegacyCleanupResult:
-        legacy = self.database.legacy_messages()
+        found = len(self.database.legacy_messages())
         if dry_run:
-            return LegacyCleanupResult(found=len(legacy), deleted=0)
+            return LegacyCleanupResult(found=found, deleted=0)
 
-        deleted = self.database.delete_legacy_messages()
-        return LegacyCleanupResult(found=len(legacy), deleted=deleted)
+        cursor = self.database.connection.execute(
+            "DELETE FROM messages WHERE stable_key IS NULL"
+        )
+        self.database.connection.commit()
+        return LegacyCleanupResult(found=found, deleted=int(cursor.rowcount))
