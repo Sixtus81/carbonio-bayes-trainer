@@ -110,6 +110,13 @@ class StateDatabase:
         ).fetchone()
         return MessageState(**dict(row)) if row else None
 
+    def legacy_messages(self) -> tuple[MessageState, ...]:
+        rows = self.connection.execute(
+            "SELECT account, message_key, stable_key, folder, trained_as, updated_at "
+            "FROM messages WHERE stable_key IS NULL ORDER BY account, message_key"
+        ).fetchall()
+        return tuple(MessageState(**dict(row)) for row in rows)
+
     def upsert(
         self,
         account: str,
