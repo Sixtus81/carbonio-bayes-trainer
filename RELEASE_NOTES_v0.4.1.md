@@ -64,7 +64,54 @@ from 2026-08-10 through 2026-09-08:
 - recent scan durations between 83 and 116 seconds
 - final health status: five stars, `Overall: Healthy`
 
-## Upgrade
+## Neuinstallation
+
+Für eine neue Installation sind zusätzlich zum Programm auch die virtuelle
+Python-Umgebung, die Konfiguration und der systemd-Timer einzurichten:
+
+```bash
+cd /opt
+git clone https://github.com/Sixtus81/carbonio-bayes-trainer.git
+cd carbonio-bayes-trainer
+python3 -m venv .venv
+.venv/bin/pip install .
+cp config.example.yaml /etc/carbonio-bayes-trainer.yaml
+```
+
+In `/etc/carbonio-bayes-trainer.yaml` die gewünschten Postfächer eintragen
+und für die erste Prüfung `dry_run: true` beibehalten. Danach ausführen:
+
+```bash
+su - zextras -c '
+cd /opt/carbonio-bayes-trainer &&
+.venv/bin/carbonio-bayes-trainer \
+  --config /etc/carbonio-bayes-trainer.yaml \
+  doctor
+'
+
+su - zextras -c '
+cd /opt/carbonio-bayes-trainer &&
+.venv/bin/carbonio-bayes-trainer \
+  --config /etc/carbonio-bayes-trainer.yaml \
+  scan
+'
+```
+
+Nach erfolgreicher Kontrolle `dry_run: false` setzen und den Timer
+installieren:
+
+```bash
+cp systemd/carbonio-bayes-trainer.service /etc/systemd/system/
+cp systemd/carbonio-bayes-trainer.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now carbonio-bayes-trainer.timer
+systemctl list-timers carbonio-bayes-trainer.timer
+```
+
+## Upgrade von v0.4.0
+
+Die folgenden Schritte setzen eine vorhandene, korrekt konfigurierte
+Installation voraus:
 
 ```bash
 cd /opt/carbonio-bayes-trainer
