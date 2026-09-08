@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.4.1] - 2026-09-08
+
+### Added
+
+- Read-only operational statistics with Bayes, state, mailbox, configuration,
+  and recent-scan data.
+- Health evaluation with actionable checks and recommendations.
+- Persistent scan history and per-mailbox analytics.
+- A non-blocking process lock that prevents overlapping trainer scans.
+- Explicit tools to migrate stable message keys and clean up unreachable
+  legacy state rows without retraining SpamAssassin.
+
+### Changed
+
+- Display statistics timestamps in the server's local timezone.
+- Use a calendar-based 15-minute systemd timer by default and document how to
+  size the interval for larger installations.
+- Backfill stable identities for observable legacy messages during normal
+  scans without triggering duplicate Spam/Ham training.
+- Report stable-key coverage and remaining legacy rows in the health output.
+
+### Fixed
+
+- Prevent concurrent scans from inflating per-run training statistics.
+- Avoid leaving old message-state rows without stable identities indefinitely.
+- Correct misleading health text about automatic legacy-key migration.
+
+### Production validation
+
+- Completed a continuous production test from 2026-08-10 through 2026-09-08.
+- Processed 16,064 known message states with 100% stable-key coverage and no
+  remaining legacy rows.
+- Recorded 9,549 Spam and 9 Ham training events without failed messages in the
+  final scan history.
+- Used a production Bayes database containing 14,497 Spam and 96,911 Ham
+  messages.
+- Maintained a healthy 10-minute schedule with recent scan durations between
+  83 and 116 seconds.
+
 ## [0.2.0] - 2026-07-23
 
 ### Added
