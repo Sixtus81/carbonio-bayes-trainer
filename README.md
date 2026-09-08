@@ -41,6 +41,43 @@ Konfiguration prüfen und zunächst im Testmodus starten:
   doctor
 ```
 
+## Betrieb und Diagnose
+
+Für die tägliche Kontrolle stehen zwei read-only Diagnosebefehle zur Verfügung:
+
+```bash
+.venv/bin/carbonio-bayes-trainer \
+  --config /etc/carbonio-bayes-trainer.yaml \
+  doctor
+
+.venv/bin/carbonio-bayes-trainer \
+  --config /etc/carbonio-bayes-trainer.yaml \
+  stats
+```
+
+`doctor` prüft Installation, Konfiguration, Carbonio-Werkzeuge und die
+SpamAssassin-Bayes-Datenbank. `stats` zeigt unter anderem:
+
+- bekannte Nachrichten und Stable-Key-Abdeckung
+- Spam-/Ham-Trainingsereignisse
+- SpamAssassin-Zähler und Token-Anzahl
+- Statistiken pro Postfach
+- die letzten Scanläufe einschließlich Laufzeit und Fehlern
+- einen Health-Status mit konkreter Empfehlung
+
+Ein gesunder Produktionszustand sieht beispielsweise so aus:
+
+```text
+Health
+------
+★★★★★
+Overall: Healthy
+
+Recommendation
+--------------
+No action required.
+```
+
 ## Konfiguration
 
 Der Abschnitt `carbonio` steuert unter anderem das parallele Einlesen der Mailbox-Ordner:
@@ -101,6 +138,45 @@ systemctl daemon-reload
 
 Falls ältere Versionen bereits trainiert haben, lagen diese Lernvorgänge möglicherweise in `/opt/zextras/.spamassassin`. Nach dem Upgrade sollten Ham-Bootstrap und Spam-Training kontrolliert gegen die produktive Datenbank erneut ausgeführt werden.
 
+## Upgrade auf v0.4.1
+
+Für ein Upgrade aus dem Git-Checkout:
+
+```bash
+cd /opt/carbonio-bayes-trainer
+git pull --ff-only
+.venv/bin/pip install .
+cp systemd/carbonio-bayes-trainer.service /etc/systemd/system/
+cp systemd/carbonio-bayes-trainer.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl restart carbonio-bayes-trainer.timer
+```
+
+Danach den Zustand kontrollieren:
+
+```bash
+su - zextras -c '
+cd /opt/carbonio-bayes-trainer &&
+.venv/bin/carbonio-bayes-trainer \
+  --config /etc/carbonio-bayes-trainer.yaml \
+  doctor
+'
+
+su - zextras -c '
+cd /opt/carbonio-bayes-trainer &&
+.venv/bin/carbonio-bayes-trainer \
+  --config /etc/carbonio-bayes-trainer.yaml \
+  stats
+'
+```
+
+Das Upgrade verändert vorhandene Bayes-Daten nicht. Bei Installationen mit
+alten State-Einträgen können die administrativen Befehle
+`migrate-stable-keys` und `cleanup-legacy` verwendet werden. Vor einer
+Bereinigung immer zuerst den jeweiligen Dry-Run ausführen. `cleanup-legacy`
+entfernt ausschließlich alte SQLite-State-Zeilen; SpamAssassin-Bayes-Daten und
+die Trainingshistorie bleiben unverändert.
+
 ## systemd
 
 ```bash
@@ -159,20 +235,30 @@ Der Befehl `doctor` zeigt das wirksame SpamAssassin-HOME, den Bayes-Pfad und die
 
 ## Produktiv validiert
 
-Version 0.2.2 wurde auf einer produktiven Carbonio-CE-Installation mit folgender Konfiguration getestet:
+Version 0.4.1 wurde vom 10. August bis zum 8. September 2026 vier Wochen lang
+auf einer produktiven Carbonio-CE-Installation getestet. Der Abschlussstand:
+
+- 16.064 bekannte Nachrichten
+- 16.064 Stable Keys, 0 Legacy Keys und damit 100 % Abdeckung
+- 9.549 Spam- und 9 Ham-Trainingsereignisse
+- produktive Bayes-Datenbank mit 14.497 Spam und 96.911 Ham
+- 0 fehlgeschlagene Nachrichten in der jüngsten Scan-Historie
+- regelmäßiger 10-Minuten-Betrieb
+- jüngste Laufzeiten zwischen ca. 83 und 116 Sekunden
+- Health-Status `★★★★★` und `Overall: Healthy`
+
+Die produktive Installation verwendet:
 
 - 30 Mailkonten
-- 7090 geprüfte Nachrichten
-- 7090 erfolgreich verarbeitet
-- 0 Fehler
 - `list_workers: 5`
 - `batch_size: 50`
 - `export_workers: 3`
 - `max_message_size: 10485760`
-- Laufzeit vor parallelem Listing: ca. 3 min 57 s
-- Laufzeit mit Version 0.2.2: ca. 1 min 26 s
 
-Das entspricht in dieser Umgebung einer Verkürzung der realen Scanzeit um rund 64 %.
+Bereits Version 0.2.2 verkürzte durch paralleles Mailbox-Listing einen
+vollständigen Scan mit 7.090 Nachrichten von ca. 3:57 auf 1:26 Minuten. Die
+v0.4.1-Validierung bestätigt darüber hinaus den stabilen Dauerbetrieb der
+Statistik-, Health-, Lock- und Stable-Key-Funktionen.
 
 ## Sicherheit
 
