@@ -22,7 +22,10 @@ Dieses Projekt beobachtet die serverseitigen Ordnerzustände aller konfigurierte
 - `sa-learn`
 - Ausführung als Benutzer `zextras` oder über einen passenden Wrapper
 
-## Installation
+## Neuinstallation
+
+Die folgenden Schritte installieren die aktuelle Version vollständig. Die
+Konfiguration wird zunächst bewusst im sicheren Testmodus betrieben.
 
 ```bash
 cd /opt
@@ -33,13 +36,42 @@ python3 -m venv .venv
 cp config.example.yaml /etc/carbonio-bayes-trainer.yaml
 ```
 
-Konfiguration prüfen und zunächst im Testmodus starten:
+In `/etc/carbonio-bayes-trainer.yaml` mindestens die gewünschten Postfächer
+eintragen und `dry_run: true` beibehalten. Danach die Installation und
+Carbonio-Anbindung prüfen:
 
 ```bash
+su - zextras -c '
+cd /opt/carbonio-bayes-trainer &&
 .venv/bin/carbonio-bayes-trainer \
   --config /etc/carbonio-bayes-trainer.yaml \
   doctor
+'
 ```
+
+Anschließend einen Testlauf ausführen und die Ausgabe kontrollieren:
+
+```bash
+su - zextras -c '
+cd /opt/carbonio-bayes-trainer &&
+.venv/bin/carbonio-bayes-trainer \
+  --config /etc/carbonio-bayes-trainer.yaml \
+  scan
+'
+```
+
+Erst nach einem erfolgreichen Test `dry_run: false` setzen. Danach die
+systemd-Units installieren und den regelmäßigen Betrieb aktivieren:
+
+```bash
+cp systemd/carbonio-bayes-trainer.service /etc/systemd/system/
+cp systemd/carbonio-bayes-trainer.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now carbonio-bayes-trainer.timer
+systemctl list-timers carbonio-bayes-trainer.timer
+```
+
+Zum Abschluss `doctor` und `stats` erneut als Benutzer `zextras` ausführen.
 
 ## Betrieb und Diagnose
 
@@ -139,6 +171,10 @@ systemctl daemon-reload
 Falls ältere Versionen bereits trainiert haben, lagen diese Lernvorgänge möglicherweise in `/opt/zextras/.spamassassin`. Nach dem Upgrade sollten Ham-Bootstrap und Spam-Training kontrolliert gegen die produktive Datenbank erneut ausgeführt werden.
 
 ## Upgrade auf v0.4.1
+
+Dieser Abschnitt gilt nur für eine bereits vorhandene Installation. Für neue
+Systeme bitte die vollständige Anleitung unter [Neuinstallation](#neuinstallation)
+verwenden.
 
 Für ein Upgrade aus dem Git-Checkout:
 
