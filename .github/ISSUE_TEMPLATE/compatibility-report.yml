@@ -1,0 +1,101 @@
+name: Installation / compatibility report
+description: Share a successful or unsuccessful test on another Carbonio installation.
+title: "[Compatibility]: "
+labels:
+  - compatibility
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports from different Carbonio environments help build a reliable
+        compatibility matrix.
+
+        **Privacy:** Do not publish passwords, tokens, complete email addresses,
+        message contents, Message-IDs, or unredacted configuration files.
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: Test result
+      options:
+        - Working successfully
+        - Working with limitations
+        - Installation or scan failed
+    validations:
+      required: true
+
+  - type: input
+    id: trainer_version
+    attributes:
+      label: Carbonio Bayes Trainer version
+      placeholder: "0.4.1"
+    validations:
+      required: true
+
+  - type: input
+    id: carbonio_version
+    attributes:
+      label: Carbonio edition and version
+      placeholder: "Carbonio CE 26.6.0"
+    validations:
+      required: true
+
+  - type: input
+    id: operating_system
+    attributes:
+      label: Operating system and Python version
+      placeholder: "Ubuntu 24.04, Python 3.12"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation type
+      options:
+        - Single-server Carbonio installation
+        - Multi-server Carbonio installation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: accounts
+    attributes:
+      label: Approximate number of scanned accounts
+      placeholder: "30"
+
+  - type: input
+    id: messages
+    attributes:
+      label: Approximate messages per scan
+      placeholder: "1700"
+
+  - type: input
+    id: duration
+    attributes:
+      label: Typical scan duration and timer interval
+      placeholder: "90 seconds, every 15 minutes"
+
+  - type: textarea
+    id: result_details
+    attributes:
+      label: Experience and limitations
+      description: Describe what worked, what required adjustment, and any limitations you observed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: health
+    attributes:
+      label: Redacted health summary
+      description: Optionally paste the Health, Checks, and Recommendation sections from `stats` after removing personal data.
+      render: text
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I have removed passwords, tokens, email content, Message-IDs, and other personal data.
+          required: true

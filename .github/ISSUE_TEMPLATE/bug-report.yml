@@ -1,0 +1,91 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Carbonio Bayes Trainer.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve Carbonio Bayes Trainer.
+
+        **Privacy:** Do not include passwords, tokens, complete email addresses,
+        message contents, Message-IDs, or unredacted configuration files. Replace
+        domains and account names with neutral examples where necessary.
+
+  - type: input
+    id: trainer_version
+    attributes:
+      label: Carbonio Bayes Trainer version
+      description: Shown at the top of `carbonio-bayes-trainer stats`.
+      placeholder: "0.4.1"
+    validations:
+      required: true
+
+  - type: input
+    id: carbonio_version
+    attributes:
+      label: Carbonio version
+      placeholder: "Carbonio CE 26.6.0"
+    validations:
+      required: true
+
+  - type: input
+    id: operating_system
+    attributes:
+      label: Operating system and Python version
+      placeholder: "Ubuntu 24.04, Python 3.12"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation type
+      options:
+        - Single-server Carbonio installation
+        - Multi-server Carbonio installation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem description
+      description: What happened, and what did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run ...
+        2. Move a test message ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Paste the relevant parts of `doctor`, `stats`, or the service log. Remove all personal and message data first.
+      render: text
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Relevant redacted configuration
+      description: Include only settings related to the problem. Do not paste secrets or real account names.
+      render: yaml
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I have removed passwords, tokens, email content, Message-IDs, and other personal data.
+          required: true
