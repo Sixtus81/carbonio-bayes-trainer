@@ -83,6 +83,8 @@ relevanten Carbonio-Dienste und die wirksamen Postfix-/Anti-Spoof-Regeln.
 Für die tägliche Kontrolle stehen zwei read-only Diagnosebefehle zur Verfügung:
 
 ```bash
+.venv/bin/carbonio-bayes-trainer --version
+
 .venv/bin/carbonio-bayes-trainer \
   --config /etc/carbonio-bayes-trainer.yaml \
   doctor
@@ -91,6 +93,9 @@ Für die tägliche Kontrolle stehen zwei read-only Diagnosebefehle zur Verfügun
   --config /etc/carbonio-bayes-trainer.yaml \
   stats
 ```
+
+`--version` zeigt die installierte Programm- und Python-Version. Die Option
+funktioniert auch zusammen mit einem vorangestellten `--config`-Argument.
 
 `doctor` prüft Installation, Konfiguration, Carbonio-Werkzeuge und die
 SpamAssassin-Bayes-Datenbank. `stats` zeigt unter anderem:
