@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.2] - 2026-11-21
+
+### Added
+
+- Add a global `--version` option that reports both the installed application
+  version and the Python runtime version.
+
+### Changed
+
+- Document the version check in the operational diagnostics section.
+
 ## [0.4.1] - 2026-09-08
 
 ### Added

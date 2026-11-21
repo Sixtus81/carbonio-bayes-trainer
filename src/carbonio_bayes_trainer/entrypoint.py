@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import platform
 import sys
 
+from . import __version__
 from .bootstrap import HamBootstrapper, MailFolder
 from .carbonio_backend import CarbonioBackend
 from .cleanup_legacy import LegacyStateCleaner
@@ -228,6 +230,10 @@ def _run_legacy_with_scan_lock(argv: list[str]) -> None:
 
 def main() -> None:
     argv = sys.argv[1:]
+    if "--version" in argv:
+        print(f"carbonio-bayes-trainer {__version__} (Python {platform.python_version()})")
+        return
+
     known_commands = (
         "bootstrap-ham",
         "cleanup-legacy",
