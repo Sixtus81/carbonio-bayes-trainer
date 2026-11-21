@@ -75,6 +75,11 @@ Zum Abschluss `doctor` und `stats` erneut als Benutzer `zextras` ausführen.
 
 ## Betrieb und Diagnose
 
+Nach Carbonio- oder Betriebssystem-Updates sollte die
+[Carbonio-Post-Upgrade-Checkliste](docs/carbonio-upgrade-checklist.md)
+vollständig durchlaufen werden. Sie kontrolliert neben dem Trainer auch die
+relevanten Carbonio-Dienste und die wirksamen Postfix-/Anti-Spoof-Regeln.
+
 Für die tägliche Kontrolle stehen zwei read-only Diagnosebefehle zur Verfügung:
 
 ```bash
